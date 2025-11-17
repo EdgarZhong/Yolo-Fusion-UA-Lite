@@ -7,5 +7,6 @@ __pycache__/
 .DS_Store
 yolo-fuse/
 data/**
+!data/**/
 !data/classes.txt
 !data/**/*.zip
