@@ -10,3 +10,4 @@ data/**
 !data/**/
 !data/classes.txt
 !data/**/*.zip
+!data/数据集预处理逻辑.md
