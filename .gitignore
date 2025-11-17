@@ -1,0 +1,11 @@
+.conda/
+.venv/
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+.DS_Store
+yolo-fuse/
+data/*
+!data/classes.txt
+!data/*.zip

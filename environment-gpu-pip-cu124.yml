@@ -1,0 +1,23 @@
+# 当前设备环境（Conda 容器 + pip GPU 轮子）：在 Conda 环境中通过 pip 安装 cu124 轮子
+# 用法（两步）：
+#   1) 创建环境
+#      conda env create -p D:\Code\DeepLearning\YOLO-Fusion-UA-Lite\.conda\yolo-fusion-lite -f environment-gpu-pip-cu124.yml
+#      conda activate D:\Code\DeepLearning\YOLO-Fusion-UA-Lite\.conda\yolo-fusion-lite
+#   2) 安装 GPU 轮子（cu124）
+#      python -m pip install --index-url https://download.pytorch.org/whl/cu124 --no-cache-dir \
+#        torch==2.6.0+cu124 torchvision==0.21.0+cu124 torchaudio==2.6.0+cu124
+# 验证：
+#   python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
+# 说明：pip 的 cu124 轮子需要使用上述 index-url，environment.yml 的 pip 段不支持写入该索引，因此单独执行第 2 步。
+
+prefix: D:\Code\DeepLearning\YOLO-Fusion-UA-Lite\.conda\yolo-fusion-lite
+channels:
+  - defaults
+  - pytorch
+dependencies:
+  - python=3.13
+  - numpy=2.2.6
+  - pip
+  - pip:
+      - ultralytics==8.3.228
+      - opencv-python==4.12.0.88

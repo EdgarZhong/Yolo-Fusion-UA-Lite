@@ -1,0 +1,1 @@
+& "C:\DevLib\miniconda3\Scripts\conda.exe" "shell.powershell" "hook" | Out-String | Invoke-Expression
