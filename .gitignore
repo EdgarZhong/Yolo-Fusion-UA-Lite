@@ -6,6 +6,6 @@ __pycache__/
 .idea/
 .DS_Store
 yolo-fuse/
-data/*
+data/**
 !data/classes.txt
-!data/*.zip
+!data/**/*.zip
