@@ -138,3 +138,14 @@
 **重要提示**
 - PyTorch 官方二进制不会自动复用系统已安装的 CUDA；必须使用带 CUDA 的发行包（Conda 的 `pytorch-cuda` 或 pip 的 `cuXXX` 轮子）
 - 若目标设备 Conda 求解失败或被降为 CPU 版，可改用 pip `cuXXX` 方案；跨设备时可准备 `12.1/12.4` 两份配置以适配不同驱动
+
+### 数据集清洗与规模变更
+
+- 清洗依据：处理脚本在第二/第三阶段 OBB 匹配中发现跨模态类别不一致时，会记录到 `data/mismatch_obb.txt`
+- 清洗脚本：`python clean_mismatch.py data` 删除记录样本的两侧图像、两份原 XML 与对应 OBB 标签
+- 删除前后数据组数量（每组一个样本对）：
+  - train：17990 → 17789
+  - val：1469 → 1445
+  - test：8980 → 8876
+  - 总计剔除：329 组
+- 压缩包：已重新压缩并覆盖 `data/train/trainlabels_yolo_obb.zip`、`data/val/vallabels_yolo_obb.zip`、`data/test/testlabels_yolo_obb.zip`，与清洗后的标签一致
