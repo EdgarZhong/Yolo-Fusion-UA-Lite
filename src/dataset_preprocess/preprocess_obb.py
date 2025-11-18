@@ -4,6 +4,7 @@ import glob
 import math
 import logging
 import re
+import random
 import xml.etree.ElementTree as ET
 import numpy as np
 import cv2
@@ -12,6 +13,16 @@ logging.basicConfig(
     level=logging.INFO,
     format="[%(levelname)s] %(message)s"
 )
+
+AABB_IOU_THR = 0.5
+OBB_COVER_THR_R = 0.4
+OBB_COVER_THR_I = 0.4
+CENTER_DIST_FACTOR = 0.8
+ANGLE_DIFF_THR_DEG = 30.0
+AREA_RATIO_MIN = 0.4
+AREA_RATIO_MAX = 2.5
+RANDOM_PICK_RGB_PROB = 0.5
+RECORD_FILE_NAME = "mismatch_obb.txt"
 
 def normalize_class_name(name: str) -> str:
     """Normalize class names to fix dataset typos and ensure consistency.
@@ -130,33 +141,160 @@ def iou(a, b):
     denom = area_a + area_b - inter
     return inter / denom if denom > 0 else 0.0
 
-def merge_by_iou(rgb_objs, ir_objs, thr=0.5):
-    """Merge RGB and IR objects by AABB IoU and matching normalized class names.
-    If matched IoU>=thr, combine corners (8 points) before minAreaRect.
-    """
-    final = []
-    used = set()
-    for i, ro in enumerate(rgb_objs):
+def merge_by_iou(
+    rgb_objs,
+    ir_objs,
+    thr=AABB_IOU_THR,
+    record_path=None,
+    subset_name=None,
+    base_name=None,
+    id_to_name=None,
+):
+    merged = []
+    used_ir = set()
+    unmatched_rgb = []
+    for ro in rgb_objs:
         best = -1.0
         best_j = -1
         for j, io in enumerate(ir_objs):
-            if j in used:
+            if j in used_ir:
                 continue
-            if ro["class"] != io["class"]:
+            if ro.get("cid", -1) < 0 or io.get("cid", -1) < 0:
                 continue
-            v = iou(ro["aabb"], io["aabb"])
+            if ro["cid"] != io["cid"]:
+                continue
+            v = iou(ro["aabb"], io["aabb"]) 
             if v > best:
                 best = v
                 best_j = j
         if best >= thr and best_j >= 0:
             pts = ro["corners"] + ir_objs[best_j]["corners"]
-            final.append({"class": ro["class"], "corners": pts})
-            used.add(best_j)
+            merged.append({"cid": ro.get("cid", -1), "class": ro["class"], "corners": pts})
+            used_ir.add(best_j)
         else:
-            final.append({"class": ro["class"], "corners": ro["corners"]})
-    for j, io in enumerate(ir_objs):
-        if j not in used:
-            final.append({"class": io["class"], "corners": io["corners"]})
+            unmatched_rgb.append(ro)
+    remaining_ir = [j for j in range(len(ir_objs)) if j not in used_ir]
+    matched_ir_stage2 = set()
+    still_unmatched_rgb = []
+    for ro in unmatched_rgb:
+        arr_r = np.array(ro["corners"], dtype=np.float32)
+        rect_r = cv2.minAreaRect(arr_r)
+        area_r = rect_r[1][0] * rect_r[1][1]
+        if area_r <= 0:
+            merged.append({"cid": ro.get("cid", -1), "class": ro["class"], "corners": ro["corners"]})
+            continue
+        best_inter = -1.0
+        best_idx = -1
+        best_rect_i = None
+        for j in remaining_ir:
+            io = ir_objs[j]
+            arr_i = np.array(io["corners"], dtype=np.float32)
+            rect_i = cv2.minAreaRect(arr_i)
+            area_i = rect_i[1][0] * rect_i[1][1]
+            if area_i <= 0:
+                continue
+            box_r = cv2.boxPoints(rect_r).astype(np.float32)
+            box_i = cv2.boxPoints(rect_i).astype(np.float32)
+            inter_area, _ = cv2.intersectConvexConvex(box_r, box_i)
+            if inter_area <= 0:
+                continue
+            if inter_area / area_r >= OBB_COVER_THR_R and inter_area / area_i >= OBB_COVER_THR_I:
+                if inter_area > best_inter:
+                    best_inter = inter_area
+                    best_idx = j
+                    best_rect_i = rect_i
+        if best_idx >= 0:
+            io = ir_objs[best_idx]
+            chosen_cid = ro.get("cid", -1)
+            chosen_name = ro["class"]
+            if ro.get("cid", -1) != io.get("cid", -1):
+                logging.error(f"OBB match class mismatch: subset={subset_name} base={base_name} rgb={ro['class']} ir={io['class']}")
+                try:
+                    if record_path and subset_name and base_name:
+                        with open(record_path, "a", encoding="utf-8") as rf:
+                            rf.write(f"{subset_name} {base_name}\n")
+                except Exception:
+                    pass
+                if random.random() < RANDOM_PICK_RGB_PROB:
+                    chosen_cid = ro.get("cid", -1)
+                    chosen_name = ro["class"]
+                else:
+                    chosen_cid = io.get("cid", -1)
+                    chosen_name = io["class"]
+            pts = ro["corners"] + io["corners"]
+            merged.append({"cid": chosen_cid, "class": chosen_name, "corners": pts})
+            matched_ir_stage2.add(best_idx)
+        else:
+            still_unmatched_rgb.append(ro)
+    for j in remaining_ir:
+        if j not in matched_ir_stage2:
+            io = ir_objs[j]
+            merged.append({"cid": io.get("cid", -1), "class": io["class"], "corners": io["corners"]})
+    remaining_ir2 = [j for j in range(len(ir_objs)) if j not in used_ir and j not in matched_ir_stage2]
+    final = []
+    used_remaining = set()
+    for m in merged:
+        final.append(m)
+    for ro in still_unmatched_rgb:
+        arr_r = np.array(ro["corners"], dtype=np.float32)
+        rect_r = cv2.minAreaRect(arr_r)
+        (cx_r, cy_r), (w_r, h_r), ang_r = rect_r
+        size_r = max(w_r, h_r)
+        best_score = -1.0
+        best_idx = -1
+        best_io = None
+        for j in remaining_ir2:
+            if j in used_remaining:
+                continue
+            io = ir_objs[j]
+            arr_i = np.array(io["corners"], dtype=np.float32)
+            rect_i = cv2.minAreaRect(arr_i)
+            (cx_i, cy_i), (w_i, h_i), ang_i = rect_i
+            size_i = max(w_i, h_i)
+            if w_i <= 0 or h_i <= 0:
+                continue
+            dc = math.hypot(cx_r - cx_i, cy_r - cy_i)
+            dist_thr = CENTER_DIST_FACTOR * max(size_r, size_i)
+            if dc > dist_thr:
+                continue
+            ang_diff = abs(ang_r - ang_i)
+            ang_diff = min(ang_diff, 180.0 - ang_diff)
+            if ang_diff > ANGLE_DIFF_THR_DEG:
+                continue
+            ratio = (w_r * h_r) / (w_i * h_i) if (w_i * h_i) > 0 else 0
+            if ratio < AREA_RATIO_MIN or ratio > AREA_RATIO_MAX:
+                continue
+            score = -dc + (20.0 - ang_diff)
+            if score > best_score:
+                best_score = score
+                best_idx = j
+                best_io = io
+        if best_idx >= 0 and best_io is not None:
+            chosen_cid = ro.get("cid", -1)
+            chosen_name = ro["class"]
+            if ro.get("cid", -1) != best_io.get("cid", -1):
+                logging.error(f"OBB center match class mismatch: subset={subset_name} base={base_name} rgb={ro['class']} ir={best_io['class']}")
+                try:
+                    if record_path and subset_name and base_name:
+                        with open(record_path, "a", encoding="utf-8") as rf:
+                            rf.write(f"{subset_name} {base_name}\n")
+                except Exception:
+                    pass
+                if random.random() < RANDOM_PICK_RGB_PROB:
+                    chosen_cid = ro.get("cid", -1)
+                    chosen_name = ro["class"]
+                else:
+                    chosen_cid = best_io.get("cid", -1)
+                    chosen_name = best_io["class"]
+            pts = ro["corners"] + best_io["corners"]
+            final.append({"cid": chosen_cid, "class": chosen_name, "corners": pts})
+            used_remaining.add(best_idx)
+        else:
+            final.append({"cid": ro.get("cid", -1), "class": ro["class"], "corners": ro["corners"]})
+    for j in remaining_ir2:
+        if j not in used_remaining:
+            io = ir_objs[j]
+            final.append({"cid": io.get("cid", -1), "class": io["class"], "corners": io["corners"]})
     return final
 
 def rect_to_yolo(iw, ih, pts):
@@ -252,6 +390,8 @@ def process_subset(sub_root, id_map):
                 for xp in glob.glob(os.path.join(d, "*.xml")):
                     union_bases.add(os.path.splitext(os.path.basename(xp))[0])
         images = [os.path.join(sub_root, "dummy", b + ".jpg") for b in sorted(union_bases)]
+    id_to_name = {v: k for k, v in id_map.items()}
+    record_path = os.path.join(os.path.dirname(sub_root), RECORD_FILE_NAME)
     for imgp in images:
         bn = os.path.splitext(os.path.basename(imgp))[0]
         rgb_xml = os.path.join(rgb_dir, bn + ".xml") if rgb_dir else None
@@ -275,10 +415,22 @@ def process_subset(sub_root, id_map):
             iw, ih = get_image_size(imgp)
         final = []
         if rgb_objs or ir_objs:
+            for o in rgb_objs:
+                o["cid"] = id_map.get(o["class"].strip(), -1)
+            for o in ir_objs:
+                o["cid"] = id_map.get(o["class"].strip(), -1)
             if ir_dir:
-                final = merge_by_iou(rgb_objs, ir_objs, thr=0.5)
+                final = merge_by_iou(
+                    rgb_objs,
+                    ir_objs,
+                    thr=AABB_IOU_THR,
+                    record_path=record_path,
+                    subset_name=subset_name,
+                    base_name=bn,
+                    id_to_name=id_to_name,
+                )
             else:
-                final = [{"class": o["class"], "corners": o["corners"]} for o in rgb_objs]
+                final = [{"cid": id_map.get(o["class"].strip(), -1), "class": o["class"], "corners": o["corners"]} for o in rgb_objs]
         outp = os.path.join(out_dir, bn + ".txt")
         if not final:
             open(outp, "w").close()
@@ -286,7 +438,9 @@ def process_subset(sub_root, id_map):
             continue
         lines = []
         for o in final:
-            cid = id_map.get(o["class"].strip(), 0)
+            cid = o.get("cid", -1)
+            if cid is None or cid < 0:
+                cid = id_map.get(o["class"].strip(), 0)
             cxn, cyn, wn, hn, ang = rect_to_yolo(iw, ih, o["corners"]) if iw and ih else (0.0, 0.0, 0.0, 0.0, 0.0)
             lines.append(f"{cid} {cxn:.6f} {cyn:.6f} {wn:.6f} {hn:.6f} {ang:.6f}")
         with open(outp, "w", encoding="utf-8") as f:

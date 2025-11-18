@@ -1,4 +1,5 @@
 .conda/
+.trae/
 .venv/
 __pycache__/
 *.pyc
@@ -9,5 +10,6 @@ yolo-fuse/
 data/**
 !data/**/
 !data/classes.txt
+!data/mismatch_obb.txt
 !data/**/*.zip
 !data/数据集预处理逻辑.md

@@ -149,3 +149,27 @@
   - test：8980 → 8876
   - 总计剔除：329 组
 - 压缩包：已重新压缩并覆盖 `data/train/trainlabels_yolo_obb.zip`、`data/val/vallabels_yolo_obb.zip`、`data/test/testlabels_yolo_obb.zip`，与清洗后的标签一致
+
+### 项目目录扫描快照
+
+- 根目录：
+  - `data/`
+    - `train/`
+      - `trainlabels_yolo_obb.zip`
+    - `val/`
+      - `vallabels_yolo_obb.zip`
+    - `test/`
+      - `testlabels_yolo_obb.zip`
+    - `classes.txt`
+    - `mismatch_obb.txt`
+    - `数据集预处理逻辑.md`
+  - `src/`
+    - `dataset_preprocess/`
+      - `preprocess_obb.py`
+      - `verify_obb_preview.py`
+      - `clean_mismatch.py`
+  - `yolo-fuse/`（参考与实验脚本集）
+  - `environment-gpu-conda.yml`
+  - `environment-gpu-pip-cu124.yml`
+  - `start-conda`
+  - `.gitignore`
