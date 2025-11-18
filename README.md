@@ -149,3 +149,20 @@
   - test：8980 → 8876
   - 总计剔除：329 组
 - 压缩包：已重新压缩并覆盖 `data/train/trainlabels_yolo_obb.zip`、`data/val/vallabels_yolo_obb.zip`、`data/test/testlabels_yolo_obb.zip`，与清洗后的标签一致
+
+### 项目目录结构
+
+- 顶层
+  - `data/`：数据与文档
+    - `train/`、`val/`、`test/`：各子集目录
+      - `*labels_yolo_obb.zip`：清洗后标签压缩包
+    - `classes.txt`：类别到 YOLO ID 映射
+    - `数据集预处理逻辑.md`：处理与清洗流程说明
+  - `src/dataset_preprocess/`：数据集标签相关源码
+    - `preprocess_obb.py`：两阶段 + 中心近邻匹配，生成 YOLO‑OBB 标签
+    - `verify_obb_preview.py`：原/新框可视化检验（左 RGB / 右 IR）
+    - `clean_mismatch.py`：按 `data/mismatch_obb.txt` 清理跨模态类别不一致样本并统计
+  - `yolo-fuse/`：参考项目与实验脚本
+  - `environment-gpu-conda.yml`、`environment-gpu-pip-cu124.yml`：环境配置
+  - `start-conda`：PowerShell 初始化 Conda 钩子
+  - `.gitignore`：忽略策略（跟踪 `classes.txt`、`*.zip`、`数据集预处理逻辑.md` 等）
