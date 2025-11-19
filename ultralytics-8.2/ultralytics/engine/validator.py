@@ -233,9 +233,9 @@ class BaseValidator:
         # Dx10 matrix, where D - detections, 10 - IoU thresholds
         correct = np.zeros((pred_classes.shape[0], self.iouv.shape[0])).astype(bool)
         # LxD matrix where L - labels (rows), D - detections (columns)
-        correct_class = true_classes[:, None] == pred_classes
-        iou = iou * correct_class  # zero out the wrong classes
-        iou = iou.cpu().numpy()
+        correct_class = (true_classes[:, None] == pred_classes).cpu()
+        iou = iou.cpu() * correct_class  # zero out the wrong classes on CPU
+        iou = iou.numpy()
         for i, threshold in enumerate(self.iouv.cpu().tolist()):
             if use_scipy:
                 # WARNING: known issue that reduces mAP in https://github.com/ultralytics/ultralytics/pull/4708

@@ -238,36 +238,42 @@ def probiou(obb1, obb2, CIoU=False, eps=1e-7):
 
 def batch_probiou(obb1, obb2, eps=1e-7):
     """
-    Calculate the prob IoU between oriented bounding boxes, https://arxiv.org/pdf/2106.06072v1.pdf.
+    Calculate the probabilistic IoU between oriented bounding boxes.
 
     Args:
-        obb1 (torch.Tensor | np.ndarray): A tensor of shape (N, 5) representing ground truth obbs, with xywhr format.
-        obb2 (torch.Tensor | np.ndarray): A tensor of shape (M, 5) representing predicted obbs, with xywhr format.
-        eps (float, optional): A small value to avoid division by zero. Defaults to 1e-7.
+        obb1 (torch.Tensor | np.ndarray): Ground truth obbs (N, 5), xywhr.
+        obb2 (torch.Tensor | np.ndarray): Predicted obbs (M, 5), xywhr.
+        eps (float, optional): Small value to avoid division by zero. Defaults to 1e-7.
 
     Returns:
-        (torch.Tensor): A tensor of shape (N, M) representing obb similarities.
+        (torch.Tensor): Similarities of shape (N, M).
     """
-    obb1 = torch.from_numpy(obb1) if isinstance(obb1, np.ndarray) else obb1
-    obb2 = torch.from_numpy(obb2) if isinstance(obb2, np.ndarray) else obb2
+    with torch.no_grad():
+        if isinstance(obb1, np.ndarray):
+            obb1 = torch.as_tensor(obb1, dtype=torch.float32)
+        if isinstance(obb2, np.ndarray):
+            obb2 = torch.as_tensor(obb2, dtype=torch.float32)
 
-    x1, y1 = obb1[..., :2].split(1, dim=-1)
-    x2, y2 = (x.squeeze(-1)[None] for x in obb2[..., :2].split(1, dim=-1))
-    a1, b1, c1 = _get_covariance_matrix(obb1)
-    a2, b2, c2 = (x.squeeze(-1)[None] for x in _get_covariance_matrix(obb2))
+        obb1 = obb1.detach().to(device="cpu", dtype=torch.float32)
+        obb2 = obb2.detach().to(device="cpu", dtype=torch.float32)
 
-    t1 = (
-        ((a1 + a2) * (y1 - y2).pow(2) + (b1 + b2) * (x1 - x2).pow(2)) / ((a1 + a2) * (b1 + b2) - (c1 + c2).pow(2) + eps)
-    ) * 0.25
-    t2 = (((c1 + c2) * (x2 - x1) * (y1 - y2)) / ((a1 + a2) * (b1 + b2) - (c1 + c2).pow(2) + eps)) * 0.5
-    t3 = (
-        ((a1 + a2) * (b1 + b2) - (c1 + c2).pow(2))
-        / (4 * ((a1 * b1 - c1.pow(2)).clamp_(0) * (a2 * b2 - c2.pow(2)).clamp_(0)).sqrt() + eps)
-        + eps
-    ).log() * 0.5
-    bd = (t1 + t2 + t3).clamp(eps, 100.0)
-    hd = (1.0 - (-bd).exp() + eps).sqrt()
-    return 1 - hd
+        x1, y1 = obb1[..., :2].split(1, dim=-1)
+        x2, y2 = obb2[..., :2].split(1, dim=-1)
+        x2 = x2.squeeze(-1)[None]
+        y2 = y2.squeeze(-1)[None]
+
+        a1, b1, c1 = _get_covariance_matrix(obb1)
+        a2, b2, c2 = _get_covariance_matrix(obb2)
+        a2, b2, c2 = a2.squeeze(-1)[None], b2.squeeze(-1)[None], c2.squeeze(-1)[None]
+
+        denom = (a1 + a2) * (b1 + b2) - (c1 + c2).pow(2) + eps
+        t1 = (((a1 + a2) * (y1 - y2).pow(2) + (b1 + b2) * (x1 - x2).pow(2)) / denom) * 0.25
+        t2 = (((c1 + c2) * (x2 - x1) * (y1 - y2)) / denom) * 0.5
+        root = ((a1 * b1 - c1.pow(2)).clamp(min=0) * (a2 * b2 - c2.pow(2)).clamp(min=0)).sqrt()
+        t3 = (((a1 + a2) * (b1 + b2) - (c1 + c2).pow(2)) / (4 * root + eps) + eps).log() * 0.5
+        bd = (t1 + t2 + t3).clamp(min=eps, max=100.0)
+        hd = (1.0 - (-bd).exp() + eps).sqrt()
+        return 1 - hd
 
 
 def smooth_BCE(eps=0.1):
