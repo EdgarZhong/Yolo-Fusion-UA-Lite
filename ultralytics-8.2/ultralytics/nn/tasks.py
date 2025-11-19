@@ -422,8 +422,16 @@ class DualBackboneOBBModel(DetectionModel):
         # 加载基础 OBB YAML 作为主干模板
         base_path = Path(__file__).parents[1] / "cfg" / "models" / "v8" / "yolov8-obb.yaml"
         base = yaml_model_load(str(base_path))
-        # 若外部传入字典，则优先使用，否则根据基础 YAML 生成双主干融合配置
-        d = cfg if isinstance(cfg, dict) else self._build_dual_obb_cfg(base)
+        # 选择配置来源：
+        # - 若传入字典，直接使用；
+        # - 若传入字符串/Path，按 YAML 文件加载；
+        # - 否则，程序化生成双主干融合配置（参考官方 obb 主干）。
+        if isinstance(cfg, dict):
+            d = cfg
+        elif isinstance(cfg, (str, Path)):
+            d = yaml_model_load(str(cfg))
+        else:
+            d = self._build_dual_obb_cfg(base)
         if nc:
             d["nc"] = nc
         d["ch"] = ch  # 强制 6 通道输入

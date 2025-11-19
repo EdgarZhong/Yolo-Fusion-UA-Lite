@@ -3,7 +3,7 @@
 from copy import copy
 
 from ultralytics.models import yolo
-from ultralytics.nn.tasks import OBBModel
+from ultralytics.nn.tasks import OBBModel, DualBackboneOBBModel
 from ultralytics.utils import DEFAULT_CFG, RANK
 
 
@@ -30,7 +30,9 @@ class OBBTrainer(yolo.detect.DetectionTrainer):
 
     def get_model(self, cfg=None, weights=None, verbose=True):
         """Return OBBModel initialized with specified config and weights."""
-        model = OBBModel(cfg, ch=6, nc=self.data["nc"], verbose=verbose and RANK == -1)
+        # 默认使用双主干模型类，以在 6 通道输入下构建双路主干 + 基础融合的 OBB 检测网络
+        # 若后续希望强制使用单主干，可改为 OBBModel(cfg, ch=6, ...) 或通过 overrides 传递标志位控制
+        model = DualBackboneOBBModel(cfg, ch=6, nc=self.data["nc"], verbose=verbose and RANK == -1)
         if weights:
             model.load(weights)
 
