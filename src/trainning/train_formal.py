@@ -54,7 +54,7 @@ SHEAR = 0.0
 
 # 输出目录与实验名
 PROJECT_DIR = "models/formal/baseline"
-RUN_NAME = "dualbackbone-easy-obb-formal"
+RUN_NAME = "dualbackbone-easy-obb-formal-3"
 
 # ==========================================================
 

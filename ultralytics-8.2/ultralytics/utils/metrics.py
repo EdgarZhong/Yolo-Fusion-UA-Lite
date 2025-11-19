@@ -250,12 +250,20 @@ def batch_probiou(obb1, obb2, eps=1e-7):
     """
     with torch.no_grad():
         if isinstance(obb1, np.ndarray):
-            obb1 = torch.as_tensor(obb1, dtype=torch.float32)
+            obb1 = torch.as_tensor(obb1)
         if isinstance(obb2, np.ndarray):
-            obb2 = torch.as_tensor(obb2, dtype=torch.float32)
+            obb2 = torch.as_tensor(obb2)
 
-        obb1 = obb1.detach().to(device="cpu", dtype=torch.float32)
-        obb2 = obb2.detach().to(device="cpu", dtype=torch.float32)
+        if not isinstance(obb1, torch.Tensor):
+            obb1 = torch.as_tensor(obb1)
+        if not isinstance(obb2, torch.Tensor):
+            obb2 = torch.as_tensor(obb2)
+
+        device = obb1.device if isinstance(obb1, torch.Tensor) else (obb2.device if isinstance(obb2, torch.Tensor) else torch.device("cpu"))
+        dtype = obb1.dtype if isinstance(obb1, torch.Tensor) else (obb2.dtype if isinstance(obb2, torch.Tensor) else torch.float32)
+
+        obb1 = obb1.detach().to(device=device, dtype=dtype)
+        obb2 = obb2.detach().to(device=device, dtype=dtype)
 
         x1, y1 = obb1[..., :2].split(1, dim=-1)
         x2, y2 = obb2[..., :2].split(1, dim=-1)
