@@ -153,7 +153,8 @@ class BaseValidator:
             self.dataloader = self.dataloader or self.get_dataloader(self.data.get(self.args.split), self.args.batch)
 
             model.eval()
-            model.warmup(imgsz=(1 if pt else self.args.batch, 3, imgsz, imgsz))  # warmup
+            c = 6 if getattr(self.args, "task", "") == "obb" else 3
+            model.warmup(imgsz=(1 if pt else self.args.batch, c, imgsz, imgsz))
 
         self.run_callbacks("on_val_start")
         dt = (
