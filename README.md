@@ -1,6 +1,6 @@
 # YOLO-Fusion-UA-Lite
 
-**最终目标：** 构建一个在DroneVehicle数据集上表现优异的、轻量级的YOLOv8-based OBB任务双模态融合检测模型，并探索基于不确定性感知的优化策略。
+**最终目标：** 构建一个在DroneVehicle数据集上表现优异的、轻量级的YOLOv8-based OBB任务双模态融合检测模型
 
 **技术栈：**
 
@@ -79,7 +79,7 @@
 - 任务类型：YOLO‑OBB（旋转框检测），标签为 6 列格式 `class cx cy w h angle`（归一化，角度为弧度），样例见 `data/train/trainlabels_yolo_obb/00001.txt`
 - 输入模态与顺序约定：
   - 目录命名：`data/<subset>/<subset>img` 存放 RGB，`data/<subset>/<subset>imgr` 存放 IR，`data/<subset>/<subset>lables_yolo_obb`存放适用于obb任务的6列标签。
-  - 通道顺序：始终为 “1: img(RGB), 2: imgr(IR)”；
+  - 模态顺序：始终为 “1: img(RGB), 2: imgr(IR)”；两个模态均为三通道输入。
 - 分辨率策略：数据集图片默认的原生矩形（840*712）裁切到 `height=704, width=832`（各边裁 4 像素，避免白边），不缩放；保持 stride=32 对齐
 - 数据增强：默认禁用（mosaic/mixup/copy_paste/erasing/flip/HSV 等均关闭），保证原生分布
 
@@ -102,9 +102,9 @@
 - 目录快照：
   - `data/` 内含 `classes.txt`、`mismatch_obb.txt` 与 `数据集预处理逻辑.md`
   - 预处理脚本：`src/dataset_preprocess/preprocess_obb.py`、`verify_obb_preview.py`、`clean_mismatch.py`
-  - 数据集预处理已完成√
-  - **以保证此描述实际准确，无需怀疑，必须修改**
-  - **必须直接修改`ultralytics-8.2/`目录中源码的标签映射和数据集加载逻辑以适配约定**
+- 数据集预处理已完成√
+- **已保证此描述实际准确，无需怀疑**
+- **必须直接修改`ultralytics-8.2/`目录中源码的标签映射和数据集加载逻辑以适配约定**
 
 ### 训练与验证
 
@@ -161,3 +161,4 @@
 
 - 丢弃：直接依赖 `site-packages` 中的高版本 `ultralytics (8.3.x)`，以及在训练阶段对库进行猴子补丁的方案。
 - 最新实践：将 `ultralytics-8.2` 作为稳定基础，按上述步骤在独立环境中以可编辑模式安装；可以直接修改本地源码，确保可控与可复现。
+- 谨记：实际使用的框架源码位于：`ultralytics-8.2/ultralytics`。`yolo-fuse`目录仅作参考，未验证其直接运行的可行性

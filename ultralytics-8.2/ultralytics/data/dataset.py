@@ -279,6 +279,124 @@ class YOLOMultiModalDataset(YOLODataset):
         return transforms
 
 
+class YOLODualDataset(YOLODataset):
+    """
+    基于仓库约定的数据目录结构（RGB 与 IR 分离目录）实现双路输入数据集类。
+
+    目录约定示例：
+    - 训练集：`data/train/trainimg/`（RGB） 与 `data/train/trainimgr/`（IR）
+    - 验证集：`data/val/valimg/`（RGB） 与 `data/val/valimgr/`（IR）
+    - 测试集：`data/test/testimg/`（RGB） 与 `data/test/testimgr/`（IR）
+    - 标签：`data/<subset>/{subset}labels_yolo_obb/` 与图像同名 `.txt`
+
+    本类将成对读取 RGB 与 IR 图像，按通道维拼接为 6 通道输入（RGB 在前，IR 在后），并根据约定映射标签路径。
+    """
+
+    def get_img_files(self, img_path):
+        """读取图像文件，自动配对同名 RGB/IR，并返回形如 'rgb_path|ir_path' 的条目列表。"""
+        from ultralytics.data.utils import IMG_FORMATS, FORMATS_HELP_MSG
+        try:
+            files = []
+            paths = img_path if isinstance(img_path, list) else [img_path]
+            for p in paths:
+                p = Path(p)
+                if p.is_dir():
+                    leaf = p.name.lower()
+                    # 识别当前目录是否为约定的 RGB 目录（trainimg/valimg/testimg）
+                    if leaf in {"trainimg", "valimg", "testimg"}:
+                        ir_leaf = leaf.replace("img", "imgr")
+                        rgb_dir = p
+                        ir_dir = rgb_dir.parent / ir_leaf
+                        if not ir_dir.exists():
+                            LOGGER.warning(f"{self.prefix}WARNING ⚠️ 未发现 IR 目录：{ir_dir}")
+                        rgb_list = sorted(x for x in rgb_dir.rglob("*.*") if x.suffix[1:].lower() in IMG_FORMATS)
+                        for rp in rgb_list:
+                            irp = ir_dir / rp.name if ir_dir.exists() else None
+                            files.append(f"{rp}|{irp}" if irp and irp.exists() else f"{rp}|")
+                    else:
+                        # 非约定目录则回退为父类单路行为
+                        files.extend(sorted(str(x) for x in p.rglob("*.*") if x.suffix[1:].lower() in IMG_FORMATS))
+                elif p.is_file():
+                    # 支持 .txt 清单（可包含 'rgb|ir' 行），保持父类行为并透传
+                    with open(p) as t:
+                        lines = [x.strip() for x in t.read().strip().splitlines() if len(x.strip())]
+                        parent = str(p.parent) + os.sep
+                        for x in lines:
+                            x = x.replace("./", parent) if x.startswith("./") else x
+                            files.append(x)
+                else:
+                    raise FileNotFoundError(f"{self.prefix}{p} 不存在")
+
+            im_files = []
+            for x in files:
+                if "|" in x:
+                    a, b = (y.strip() for y in x.split("|", 1))
+                    a_ok = Path(a).suffix[1:].lower() in IMG_FORMATS
+                    b_ok = (Path(b).suffix[1:].lower() in IMG_FORMATS) if b else False
+                    if a_ok:
+                        im_files.append(a.replace("/", os.sep) + ("|" + b.replace("/", os.sep) if b_ok else "|"))
+                else:
+                    if x.split(".")[-1].lower() in IMG_FORMATS:
+                        im_files.append(x.replace("/", os.sep))
+
+            assert im_files, f"{self.prefix}未在 {img_path} 中找到图像。{FORMATS_HELP_MSG}"
+        except Exception as e:
+            raise FileNotFoundError(f"{self.prefix}加载数据失败：{img_path}\n{FORMATS_HELP_MSG}") from e
+
+        if self.fraction < 1:
+            im_files = im_files[: round(len(im_files) * self.fraction)]
+        return im_files
+
+    def get_labels(self):
+        """根据约定目录结构生成标签路径并缓存校验结果。"""
+        from ultralytics.data.utils import HELP_URL, get_hash, load_dataset_cache_file, save_dataset_cache_file
+        labels = []
+        # 将 'rgb|ir' 项转换为 RGB 路径用于标签映射与校验
+        rgb_files = [x.split("|", 1)[0] if "|" in x else x for x in self.im_files]
+
+        # 根据约定将 RGB 路径映射到 {subset}labels_yolo_obb
+        def map_label_path(rgb):
+            rp = Path(rgb)
+            leaf = rp.parent.name.lower()  # e.g. trainimg
+            if leaf in {"trainimg", "valimg", "testimg"}:
+                subset = leaf.replace("img", "")  # train / val / test
+                base = rp.parent.parent  # .../data/train
+                lb_dir = base / f"{subset}labels_yolo_obb"
+                return (lb_dir / (rp.stem + ".txt")).as_posix()
+            # 兜底：保持原有映射（可能失败）
+            from ultralytics.data.utils import img2label_paths
+            return img2label_paths([rgb])[0]
+
+        self.label_files = [map_label_path(f) for f in rgb_files]
+        cache_path = Path(self.label_files[0]).parent.with_suffix(".cache")
+        try:
+            cache, exists = load_dataset_cache_file(cache_path), True
+            assert cache["version"] == DATASET_CACHE_VERSION
+            assert cache["hash"] == get_hash(self.label_files + rgb_files)
+        except (FileNotFoundError, AssertionError, AttributeError):
+            cache, exists = self.cache_labels(cache_path), False
+
+        # 展示缓存信息
+        nf, nm, ne, nc, n = cache.pop("results")
+        if exists and LOCAL_RANK in {-1, 0}:
+            d = f"扫描 {cache_path}... {nf} images, {nm + ne} backgrounds, {nc} corrupt"
+            TQDM(None, desc=self.prefix + d, total=n, initial=n)
+            if cache["msgs"]:
+                LOGGER.info("\n".join(cache["msgs"]))
+
+        # 读取缓存
+        [cache.pop(k) for k in ("hash", "version", "msgs")]
+        labels = cache["labels"]
+        if not labels:
+            LOGGER.warning(f"WARNING ⚠️ 缓存 {cache_path} 中未发现图像，训练可能异常。{HELP_URL}")
+        # 覆盖 im_files 为 RGB|IR 对，以便后续 load_image 能读取 IR
+        # 注意：labels 中的 'im_file' 保持为 RGB 文件路径（用于校验与标签映射）。
+        # 这里将 im_files 还原为之前构建的双路对列表，保持 BaseDataset.load_image 的 6 通道拼接行为。
+        self.im_files = [rf + ("|" + Path(rf).parent.parent / (Path(rf).parent.name.replace("img", "imgr")) / Path(rf).name).as_posix() if "|" not in imf and Path(Path(rf).parent.parent / (Path(rf).parent.name.replace("img", "imgr")) / Path(rf).name).exists() else imf)
+                         for rf, imf in zip(rgb_files, self.im_files)]
+        return labels
+
+
 class GroundingDataset(YOLODataset):
     """Handles object detection tasks by loading annotations from a specified JSON file, supporting YOLO format."""
 

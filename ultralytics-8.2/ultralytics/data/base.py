@@ -88,7 +88,7 @@ class BaseDataset(Dataset):
 
         # Cache images (options are cache = True, False, None, "ram", "disk")
         self.ims, self.im_hw0, self.im_hw = [None] * self.ni, [None] * self.ni, [None] * self.ni
-        self.npy_files = [Path(f).with_suffix(".npy") for f in self.im_files]
+        self.npy_files = [Path(f.split("|")[0]).with_suffix(".npy") for f in self.im_files]
         self.cache = cache.lower() if isinstance(cache, str) else "ram" if cache is True else None
         if (self.cache == "ram" and self.check_cache_ram()) or self.cache == "disk":
             if self.cache == "ram" and hyp.deterministic:
@@ -118,7 +118,15 @@ class BaseDataset(Dataset):
                         # F += [p.parent / x.lstrip(os.sep) for x in t]  # local to global path (pathlib)
                 else:
                     raise FileNotFoundError(f"{self.prefix}{p} does not exist")
-            im_files = sorted(x.replace("/", os.sep) for x in f if x.split(".")[-1].lower() in IMG_FORMATS)
+            im_files = []
+            for x in f:
+                if "|" in x:
+                    a, b = [y.strip() for y in x.split("|", 1)]
+                    if a.split(".")[-1].lower() in IMG_FORMATS and b.split(".")[-1].lower() in IMG_FORMATS:
+                        im_files.append(a.replace("/", os.sep) + "|" + b.replace("/", os.sep))
+                else:
+                    if x.split(".")[-1].lower() in IMG_FORMATS:
+                        im_files.append(x.replace("/", os.sep))
             # self.img_files = sorted([x for x in f if x.suffix[1:].lower() in IMG_FORMATS])  # pathlib
             assert im_files, f"{self.prefix}No images found in {img_path}. {FORMATS_HELP_MSG}"
         except Exception as e:
@@ -149,23 +157,42 @@ class BaseDataset(Dataset):
     def load_image(self, i, rect_mode=True):
         """Loads 1 image from dataset index 'i', returns (im, resized hw)."""
         im, f, fn = self.ims[i], self.im_files[i], self.npy_files[i]
+        f_rgb, f_ir = (f.split("|", 1) + [None])[:2] if "|" in f else (f, None)
         if im is None:  # not cached in RAM
-            if fn.exists():  # load npy
+            if fn.exists():
                 try:
                     im = np.load(fn)
                 except Exception as e:
                     LOGGER.warning(f"{self.prefix}WARNING ⚠️ Removing corrupt *.npy image file {fn} due to: {e}")
                     Path(fn).unlink(missing_ok=True)
-                    im = cv2.imread(f)  # BGR
-            else:  # read image
-                im = cv2.imread(f)  # BGR
+                    base = cv2.imread(f_rgb)
+                    if base is None:
+                        raise FileNotFoundError(f"Image Not Found {f_rgb}")
+                    if f_ir:
+                        side = cv2.imread(f_ir)
+                        if side is None:
+                            side = np.zeros_like(base)
+                    else:
+                        side = np.zeros_like(base)
+                    im = np.concatenate([base, side], axis=2)
+            else:
+                base = cv2.imread(f_rgb)
+                if base is None:
+                    raise FileNotFoundError(f"Image Not Found {f_rgb}")
+                if f_ir:
+                    side = cv2.imread(f_ir)
+                    if side is None:
+                        side = np.zeros_like(base)
+                else:
+                    side = np.zeros_like(base)
+                im = np.concatenate([base, side], axis=2)
             if im is None:
                 raise FileNotFoundError(f"Image Not Found {f}")
 
-            h0, w0 = im.shape[:2]  # orig hw
+            h0, w0 = im.shape[:2]
             if rect_mode:  # resize long side to imgsz while maintaining aspect ratio
-                r = self.imgsz / max(h0, w0)  # ratio
-                if r != 1:  # if sizes are not equal
+                r = self.imgsz / max(h0, w0)
+                if r != 1:
                     w, h = (min(math.ceil(w0 * r), self.imgsz), min(math.ceil(h0 * r), self.imgsz))
                     im = cv2.resize(im, (w, h), interpolation=cv2.INTER_LINEAR)
             elif not (h0 == w0 == self.imgsz):  # resize by stretching image to square imgsz
@@ -173,7 +200,7 @@ class BaseDataset(Dataset):
 
             # Add to buffer if training with augmentations
             if self.augment:
-                self.ims[i], self.im_hw0[i], self.im_hw[i] = im, (h0, w0), im.shape[:2]  # im, hw_original, hw_resized
+                self.ims[i], self.im_hw0[i], self.im_hw[i] = im, (h0, w0), im.shape[:2]
                 self.buffer.append(i)
                 if 1 < len(self.buffer) >= self.max_buffer_length:  # prevent empty buffer
                     j = self.buffer.pop(0)
@@ -204,7 +231,19 @@ class BaseDataset(Dataset):
         """Saves an image as an *.npy file for faster loading."""
         f = self.npy_files[i]
         if not f.exists():
-            np.save(f.as_posix(), cv2.imread(self.im_files[i]), allow_pickle=False)
+            src = self.im_files[i]
+            if "|" in src:
+                a, b = src.split("|", 1)
+                base = cv2.imread(a)
+                if base is None:
+                    raise FileNotFoundError(f"Image Not Found {a}")
+                side = cv2.imread(b)
+                if side is None:
+                    side = np.zeros_like(base)
+                arr = np.concatenate([base, side], axis=2)
+            else:
+                arr = cv2.imread(src)
+            np.save(f.as_posix(), arr, allow_pickle=False)
 
     def check_cache_ram(self, safety_margin=0.5):
         """Check image caching requirements vs available memory."""
