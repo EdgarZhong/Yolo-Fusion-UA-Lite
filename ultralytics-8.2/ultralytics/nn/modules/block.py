@@ -696,6 +696,58 @@ class CBFuse(nn.Module):
         return torch.sum(torch.stack(res + xs[-1:]), dim=0)
 
 
+class IdentityInput(nn.Module):
+    """
+    恒等输入模块：原样返回输入，用于在配置图中占位或分支起点的语义标注。
+
+    该模块常用于多模态配置中与 `ModalitySelector` 搭配，明确从同一输入建立多个分支的起点。
+    """
+
+    def __init__(self):
+        """初始化恒等输入模块，不包含参数。"""
+        super().__init__()
+
+    def forward(self, x):
+        """前向传播：直接返回输入张量。"""
+        return x
+
+
+class ModalitySelector(nn.Module):
+    """
+    模态选择模块：从 6 通道输入张量中选择指定模态的 3 个通道。
+
+    约定：
+    - 通道顺序始终为前 3 通道为 RGB，后 3 通道为 IR。
+    - `idx=1` 选择 RGB，`idx=2` 选择 IR。
+    - 若输入为列表/元组（例如上一层为 `CBLinear` 的分裂输出），则直接按索引选择对应分支。
+    """
+
+    def __init__(self, idx: int = 1):
+        """
+        初始化模态选择器。
+
+        参数：
+        - `idx`：选择的模态索引，1 表示 RGB，2 表示 IR。
+        """
+        super().__init__()
+        assert idx in (1, 2), "ModalitySelector idx 仅支持 1(RGB) 或 2(IR)。"
+        self.idx = idx
+
+    def forward(self, x):
+        """
+        前向传播：根据输入类型与设定的 `idx`，选择对应模态的张量。
+
+        - 当 `x` 为 `list/tuple`：直接选择 `x[self.idx-1]`。
+        - 当 `x` 为 `Tensor`：按约定的通道顺序进行切片。
+        """
+        if isinstance(x, (list, tuple)):
+            return x[self.idx - 1]
+        # 张量路径：切片通道
+        if x.dim() == 4 and x.size(1) == 6:
+            return x[:, :3] if self.idx == 1 else x[:, 3:]
+        raise ValueError("ModalitySelector 输入形状不符合要求，需为 (B,6,H,W) 或分裂输出列表。")
+
+
 class RepVGGDW(torch.nn.Module):
     """RepVGGDW is a class that represents a depth wise separable convolutional block in RepVGG architecture."""
 

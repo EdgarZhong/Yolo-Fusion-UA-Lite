@@ -389,11 +389,7 @@ class YOLODualDataset(YOLODataset):
         labels = cache["labels"]
         if not labels:
             LOGGER.warning(f"WARNING ⚠️ 缓存 {cache_path} 中未发现图像，训练可能异常。{HELP_URL}")
-        # 覆盖 im_files 为 RGB|IR 对，以便后续 load_image 能读取 IR
-        # 注意：labels 中的 'im_file' 保持为 RGB 文件路径（用于校验与标签映射）。
-        # 这里将 im_files 还原为之前构建的双路对列表，保持 BaseDataset.load_image 的 6 通道拼接行为。
-        self.im_files = [rf + ("|" + Path(rf).parent.parent / (Path(rf).parent.name.replace("img", "imgr")) / Path(rf).name).as_posix() if "|" not in imf and Path(Path(rf).parent.parent / (Path(rf).parent.name.replace("img", "imgr")) / Path(rf).name).exists() else imf)
-                         for rf, imf in zip(rgb_files, self.im_files)]
+        # 注：`im_files` 的双路对构造在 `get_img_files` 阶段已完成，这里不再修改。
         return labels
 
 

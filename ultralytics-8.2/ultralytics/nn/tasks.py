@@ -32,6 +32,8 @@ from ultralytics.nn.modules import (
     C3x,
     CBFuse,
     CBLinear,
+    IdentityInput,
+    ModalitySelector,
     Classify,
     Concat,
     Conv,
@@ -395,6 +397,135 @@ class OBBModel(DetectionModel):
     def init_criterion(self):
         """Initialize the loss criterion for the model."""
         return v8OBBLoss(self)
+
+
+class DualBackboneOBBModel(DetectionModel):
+    """
+    双主干 OBB 模型类：根据自定义配置（程序生成或传入字典）构建双路主干网络，并在颈部进行基础特征融合，最后接入 OBB 头。
+
+    设计原则：
+    - 继承官方 `DetectionModel`，使用既有的 `parse_model` 构建流程，确保与训练、推理、导出等管线兼容。
+    - 输入通道固定为 6（RGB 三通道 + IR 三通道），前向时无需特殊处理，模型内部通过 `ModalitySelector` 切分模态。
+    - 参考 `yolo-fuse` 项目中 `Easy-level-Feature-Fusion.yaml` 的思路：两路主干、在各尺度（P3/P4/P5）以基础 `Concat + C2f` 进行融合，并直接接入 `OBB` 头。
+    """
+
+    def __init__(self, cfg=None, ch=6, nc=None, verbose=True):
+        """
+        初始化双主干 OBB 模型。
+
+        参数：
+        - `cfg`：可选配置；若为 `dict`，应包含 `nc/scales/backbone_base` 等字段；若为 `None`，将基于官方 `yolov8-obb.yaml` 自动生成双主干融合配置。
+        - `ch`：输入通道，固定为 6。
+        - `nc`：类别数；若未提供，则使用配置中的 `nc`。
+        - `verbose`：是否打印构建信息。
+        """
+        # 加载基础 OBB YAML 作为主干模板
+        base_path = Path(__file__).parents[1] / "cfg" / "models" / "v8" / "yolov8-obb.yaml"
+        base = yaml_model_load(str(base_path))
+        # 若外部传入字典，则优先使用，否则根据基础 YAML 生成双主干融合配置
+        d = cfg if isinstance(cfg, dict) else self._build_dual_obb_cfg(base)
+        if nc:
+            d["nc"] = nc
+        d["ch"] = ch  # 强制 6 通道输入
+
+        # 使用标准构建流程
+        super().__init__(cfg=d, ch=ch, nc=nc, verbose=verbose)
+
+    def _build_dual_obb_cfg(self, base):
+        """
+        基于官方 `yolov8-obb.yaml`，程序化生成“双主干 + 基础融合 + OBB 头”的配置字典。
+
+        实现要点：
+        - 在 `backbone` 开头添加 `IdentityInput` 与两路 `ModalitySelector`，分别选择 RGB/IR。
+        - 分别为 RGB/IR 构建一套与基础 OBB 主干等价的层序列，并记录各尺度输出的索引（P3/P4/P5）。
+        - 在 `head` 中对对应尺度进行 `Concat`，后接 `C2f` 将通道规整到标准值（256/512/1024），最后 `OBB` 检测头使用三尺度输出。
+        """
+        scales = base.get("scales", None)
+        nc = base.get("nc", 80)
+        bb = base["backbone"]
+
+        layers = []
+        # 0: 恒等输入，建立分支起点语义
+        layers.append([-1, 1, "IdentityInput", []])  # idx0
+        # 1: RGB 选择器，2: IR 选择器
+        layers.append([-1, 1, "ModalitySelector", [1]])  # idx1 RGB
+        layers.append([-2, 1, "ModalitySelector", [2]])  # idx2 IR
+
+        def add_branch(start_idx):
+            """将基础主干序列复制到当前图，并返回 P3/P4/P5 的输出索引。"""
+            p3_idx = p4_idx = p5_idx = None
+            # 按照官方 obb backbone 的语义阶段记录：
+            # P3: Conv(256)->C2f(256,6次)
+            # P4: Conv(512)->C2f(512,6次)
+            # P5: Conv(1024)->C2f(1024,3次)->SPPF(1024)
+            # 构建时逐层追加，并在关键节点记录索引
+            # 3: Conv(64,3,2)
+            layers.append([start_idx, 1, "Conv", [64, 3, 2]])
+            # 4: Conv(128,3,2)
+            layers.append([-1, 1, "Conv", [128, 3, 2]])
+            # 5: C2f(128, True, 3)
+            layers.append([-1, 3, "C2f", [128, True]])
+            # 6: Conv(256,3,2)
+            layers.append([-1, 1, "Conv", [256, 3, 2]])
+            # 7: C2f(256, True, 6)
+            layers.append([-1, 6, "C2f", [256, True]])
+            p3_idx = len(layers) - 1
+            # 8: Conv(512,3,2)
+            layers.append([-1, 1, "Conv", [512, 3, 2]])
+            # 9: C2f(512, True, 6)
+            layers.append([-1, 6, "C2f", [512, True]])
+            p4_idx = len(layers) - 1
+            # 10: Conv(1024,3,2)
+            layers.append([-1, 1, "Conv", [1024, 3, 2]])
+            # 11: C2f(1024, True, 3)
+            layers.append([-1, 3, "C2f", [1024, True]])
+            # 12: SPPF(1024,5)
+            layers.append([-1, 1, "SPPF", [1024, 5]])
+            p5_idx = len(layers) - 1
+            return p3_idx, p4_idx, p5_idx
+
+        # 构建两路主干
+        rgb_p3, rgb_p4, rgb_p5 = add_branch(1)
+        ir_p3, ir_p4, ir_p5 = add_branch(2)
+
+        # Head：各尺度基础融合 + 规整
+        head = []
+        # 融合 P3
+        head.append([[rgb_p3, ir_p3], 1, "Concat", [1]])
+        head.append([-1, 3, "C2f", [256, False]])  # 输出记为 h_p3
+        h_p3 = len(layers) + len(head) - 1
+        # 融合 P4
+        head.append([[rgb_p4, ir_p4], 1, "Concat", [1]])
+        head.append([-1, 3, "C2f", [512, False]])
+        h_p4 = len(layers) + len(head) - 1
+        # 融合 P5
+        head.append([[rgb_p5, ir_p5], 1, "Concat", [1]])
+        head.append([-1, 3, "C2f", [1024, False]])
+        h_p5 = len(layers) + len(head) - 1
+
+        # OBB 头：三尺度
+        head.append([[h_p3, h_p4, h_p5], 1, "OBB", [nc, 1]])
+
+        d = {
+            "nc": nc,
+            "ch": 6,
+            "scales": scales,
+            "backbone": layers,
+            "head": head,
+        }
+        return d
+
+    def init_criterion(self):
+        """初始化 OBB 任务的损失函数。"""
+        return v8OBBLoss(self)
+
+    def predict(self, x, profile=False, visualize=False, augment=False, embed=None):
+        """
+        前向预测：处理 6 通道双模态输入，调用标准一次性前向；如输入通道非 6，将抛出异常以避免误用。
+        """
+        if isinstance(x, torch.Tensor) and x.dim() == 4 and x.size(1) != 6:
+            raise ValueError("DualBackboneOBBModel 仅支持 (B,6,H,W) 输入通道数。")
+        return super().predict(x, profile=profile, visualize=visualize, augment=augment, embed=embed)
 
 
 class SegmentationModel(DetectionModel):
@@ -1024,6 +1155,11 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                 args[2] = make_divisible(min(args[2], max_channels) * width, 8)
         elif m is RTDETRDecoder:  # special case, channels arg must be passed in index 1
             args.insert(1, [ch[x] for x in f])
+        elif m is ModalitySelector:
+            # 模态选择器按约定将输入通道对半切分（6->3）；若输入非偶数通道，回退为不变
+            c2 = ch[f] // 2 if isinstance(f, int) else ch[f[-1]] // 2
+            # 传递选择索引参数
+            args = [args[0]]
         elif m is CBLinear:
             c2 = args[0]
             c1 = ch[f]
