@@ -13,3 +13,12 @@ data/**
 !data/mismatch_obb.txt
 !data/**/*.zip
 !data/数据集预处理逻辑.md
+
+# 忽略训练产物，仅保留目录本身（models/baseline, models/formal）
+# 说明：Git 不会跟踪空目录，因此使用 .gitkeep 作为占位文件保留目录结构
+models/baseline/**
+!models/baseline/
+!models/baseline/.gitkeep
+models/formal/**
+!models/formal/
+!models/formal/.gitkeep

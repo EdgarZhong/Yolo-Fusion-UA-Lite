@@ -78,9 +78,9 @@
    **当前阶段：阶段一**
 - 任务类型：YOLO‑OBB（旋转框检测），标签为 6 列格式 `class cx cy w h angle`（归一化，角度为弧度），样例见 `data/train/trainlabels_yolo_obb/00001.txt`
 - 输入模态与顺序约定：
-  - 目录命名：`data/<subset>/<subset>img` 存放 RGB，`data/<subset>/<subset>imgr` 存放 IR，`data/<subset>/<subset>lables_yolo_obb`存放适用于obb任务的6列标签。
+  - 目录命名：`data/<subset>/<subset>img` 存放 RGB，`data/<subset>/<subset>imgr` 存放 IR，`data/<subset>/<subset>labels_yolo_obb` 存放适用于 OBB 任务的 6 列标签。
   - 模态顺序：始终为 “1: img(RGB), 2: imgr(IR)”；两个模态均为三通道输入。
-- 分辨率策略：数据集图片默认的原生矩形（840*712）裁切到 `height=704, width=832`（各边裁 4 像素，避免白边），不缩放；保持 stride=32 对齐
+- 分辨率策略（更新）：训练阶段使用 `imgsz=832` 且 `rect=False`（开启随机打乱，`mosaic=0`），不进行任何裁切或标签重计算；验证与测试阶段使用 `imgsz=832` 且 `rect=True`，不做其它操作。
 - 数据增强：默认禁用（mosaic/mixup/copy_paste/erasing/flip/HSV 等均关闭），保证原生分布
 
 ### 环境与激活
@@ -88,7 +88,7 @@
 - 初始化 Conda（PowerShell）：
   - `& "C:\DevLib\miniconda3\Scripts\conda.exe" shell.powershell hook | Out-String | Invoke-Expression`
 - 激活项目环境：
-  - `conda activate .\\.conda\\yolo-fusion-lite`
+  - `conda activate .\\.conda\\ultra82-py312`
 - 版本锁定：`ultralytics==8.2.103`、`numpy==1.26.4`、`torch==2.6.0+cu124`（CUDA 12.4）
 
 ### 数据与目录结构
@@ -109,8 +109,9 @@
 ### 训练与验证
 
  **基线模型务必存放在 `models/baseline/` 目录中**
- 训练脚本编写逻辑可以使用命令参数控制使用的训练数据比例
-快速训练验证：单轮次训练，使用0.05比例的训练数据，验证集评估
+ - 快速验证脚本：`src/trainning/baseline_quick_train.py`（单轮次训练，`fraction=0.05`，`imgsz=832`，训练 `rect=False`，验证/测试 `rect=True`）
+ - 正式训练脚本：`src/trainning/train_formal.py`（顶层宏统一管理超参；早停 `patience=10`；显式打印 `optimizer/lr0` 配置以便日志核对）
+ - 训练脚本支持通过参数/宏控制训练数据比例与数据输入策略，保持与本文档约定一致
 
 
 ## 常见问题与说明
@@ -119,7 +120,7 @@
 - 若出现 pin_memory 线程异常：
   - 将 `workers` 降至 0/2，保证缓存与并发稳定
 - 若日志显示输入为正方形：
-  - 确认传参使用 `imgsz=[704,832]` 与 `rect=True`；脚本启动时会打印 `[Train][OBB] 使用矩形输入尺寸: height=704, width=832, rect=True`
+  - 训练阶段为 `imgsz=832` 且 `rect=False`（批次随机打乱）；验证/测试阶段为 `imgsz=832` 且 `rect=True`（按长宽比分桶，自动关闭 shuffle）。不再使用矩形尺寸对（如 `[704,832]`），以避免任何隐性裁切与标签调整。
 
 ## 参考与附属记录
 - `yolo-fuse/` 目录：**作为参考与范例，不直接参与本项目训练**；其中包含多模态融合模块与配置，可用于对照研究
@@ -163,3 +164,41 @@
 - 丢弃：直接依赖 `site-packages` 中的高版本 `ultralytics (8.3.x)`，以及在训练阶段对库进行猴子补丁的方案。
 - 最新实践：将 `ultralytics-8.2` 作为稳定基础，按上述步骤在独立环境中以可编辑模式安装；可以直接修改本地源码，确保可控与可复现。
 - 谨记：实际使用的框架源码位于：`ultralytics-8.2/ultralytics`。`yolo-fuse`目录仅作参考，未验证其直接运行的可行性
+
+### 项目目录结构（目录树）
+
+```
+YOLO-Fusion-UA-Lite/
+├─ models/
+│  ├─ baseline/
+│  └─ formal/
+├─ src/
+│  ├─ cfg/
+│  │  ├─ datasets/
+│  │  │  ├─ dual_obb_dronevehicle.yaml
+│  │  │  └─ dual_obb_sample.yaml
+│  │  └─ model/
+│  │     └─ dualbackbone_easy_obb.yaml
+│  ├─ dataset_preprocess/
+│  │  ├─ preprocess_obb.py
+│  │  ├─ verify_obb_preview.py
+│  │  └─ clean_mismatch.py
+│  └─ trainning/
+│     ├─ baseline_quick_train.py
+│     └─ train_formal.py
+├─ ultralytics-8.2/
+│  ├─ ultralytics/
+│  │  ├─ data/      （数据集与变换：augment/base/build/dataset/...）
+│  │  ├─ engine/    （trainer/validator/predictor/...）
+│  │  ├─ models/    （yolo/obb 等任务模块）
+│  │  ├─ nn/        （modules/tasks/autobackend/...）
+│  │  ├─ utils/     （工具与回调）
+│  │  ├─ trackers/  （跟踪相关模块）
+│  │  ├─ hub/       （Hub 集成）
+│  │  └─ solutions/ （示例解决方案）
+│  ├─ docs/         （官方文档与参考）
+│  ├─ tests/        （单元与集成测试）
+│  └─ examples/     （示例工程）
+├─ start-conda      （Conda 激活脚本）
+└─ .gitignore
+```

@@ -1,6 +1,7 @@
 # Ultralytics YOLO 🚀, AGPL-3.0 license
 
 import contextlib
+import os
 import json
 from collections import defaultdict
 from itertools import repeat
@@ -391,6 +392,103 @@ class YOLODualDataset(YOLODataset):
             LOGGER.warning(f"WARNING ⚠️ 缓存 {cache_path} 中未发现图像，训练可能异常。{HELP_URL}")
         # 注：`im_files` 的双路对构造在 `get_img_files` 阶段已完成，这里不再修改。
         return labels
+
+    def cache_labels(self, path=Path("./labels.cache")):
+        """为双路 OBB 数据集构建标签缓存，支持 6 列 `class cx cy w h angle` 解析，并将旋转框转换为多边形段。"""
+        x = {"labels": []}
+        nm, nf, ne, nc, msgs = 0, 0, 0, 0, []
+        desc = f"{self.prefix}Scanning {path.parent / path.stem}..."
+        total = len(self.im_files)
+        with ThreadPool(NUM_THREADS) as pool:
+            results = pool.imap(func=lambda args: self._verify_dual_obb_label(*args), iterable=zip(self.im_files, self.label_files, repeat(self.prefix)))
+            pbar = TQDM(results, desc=desc, total=total)
+            for im_file, lb, shape, segments, nm_f, nf_f, ne_f, nc_f, msg in pbar:
+                nm += nm_f
+                nf += nf_f
+                ne += ne_f
+                nc += nc_f
+                if im_file:
+                    x["labels"].append(
+                        {
+                            "im_file": im_file,
+                            "shape": shape,
+                            "cls": lb[:, 0:1],
+                            "bboxes": lb[:, 1:5],
+                            "segments": segments,
+                            "keypoints": None,
+                            "normalized": True,
+                            "bbox_format": "xywh",
+                        }
+                    )
+                if msg:
+                    msgs.append(msg)
+                pbar.desc = f"{desc} {nf} images, {nm + ne} backgrounds, {nc} corrupt"
+            pbar.close()
+
+        if msgs:
+            LOGGER.info("\n".join(msgs))
+        if nf == 0:
+            LOGGER.warning(f"{self.prefix}WARNING ⚠️ No labels found in {path}. {HELP_URL}")
+        x["hash"] = get_hash(self.label_files + self.im_files)
+        x["results"] = nf, nm, ne, nc, len(self.im_files)
+        x["msgs"] = msgs
+        save_dataset_cache_file(self.prefix, path, x, DATASET_CACHE_VERSION)
+        return x
+
+    @staticmethod
+    def _verify_dual_obb_label(im_file_entry, lb_file, prefix):
+        """解析 'rgb|ir' 图像条目与 6 列 OBB 标签，返回统一缓存项。"""
+        from PIL import Image
+        from ultralytics.data.utils import exif_size
+        nm, nf, ne, nc, msg = 0, 0, 0, 0, ""
+        try:
+            if "|" in im_file_entry:
+                rgb_path = im_file_entry.split("|", 1)[0]
+            else:
+                rgb_path = im_file_entry
+            im = Image.open(rgb_path)
+            im.verify()
+            shape = exif_size(im)
+            shape = (shape[1], shape[0])
+            assert (shape[0] > 9) & (shape[1] > 9), f"image size {shape} <10 pixels"
+
+            if os.path.isfile(lb_file):
+                nf = 1
+                with open(lb_file) as f:
+                    raw = [x.split() for x in f.read().strip().splitlines() if len(x)]
+                lb = np.array(raw, dtype=np.float32)
+                if lb.size:
+                    if lb.shape[1] != 6:
+                        raise AssertionError(f"labels require 6 columns for OBB, {lb.shape[1]} columns detected")
+                    if lb.min() < 0:
+                        raise AssertionError(f"negative label values {lb[lb < 0]}")
+                    if lb[:, 1:5].max() > 1:
+                        raise AssertionError(f"non-normalized or out of bounds coordinates {lb[:, 1:5][lb[:, 1:5] > 1]}")
+                    max_cls = lb[:, 0].max()
+                    # num_cls unknown here, skip upper-bound check
+                    # 转换为多边形段（归一化坐标系）
+                    segments = []
+                    for row in lb:
+                        _, cx, cy, w, h, ang = row.tolist()
+                        hw, hh = w * 0.5, h * 0.5
+                        c, s = np.cos(ang), np.sin(ang)
+                        corners = np.array([[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]], dtype=np.float32)
+                        R = np.array([[c, -s], [s, c]], dtype=np.float32)
+                        rotated = (corners @ R.T) + np.array([cx, cy], dtype=np.float32)
+                        segments.append(rotated)
+                else:
+                    ne = 1
+                    lb = np.zeros((0, 6), dtype=np.float32)
+                    segments = []
+            else:
+                nm = 1
+                lb = np.zeros((0, 6), dtype=np.float32)
+                segments = []
+            return im_file_entry, lb, shape, segments, nm, nf, ne, nc, msg
+        except Exception as e:
+            nc = 1
+            msg = f"{prefix}WARNING ⚠️ {im_file_entry}: ignoring corrupt image/label: {e}"
+            return [None, None, None, None, None, nm, nf, ne, nc, msg]
 
 
 class GroundingDataset(YOLODataset):
