@@ -1,0 +1,69 @@
+# 双主干 FusionAttention OBB 模型配置
+# 输入约定：RGB+IR 共 6 通道，RGB 在前，IR 在后
+
+# 任务类型
+task: dual_obb
+
+# 模型类
+model: DualOBBModel
+
+# 类别数（与 DroneVehicle 数据集一致）
+nc: 5
+
+# 输入通道固定为 6（RGB+IR）
+ch: 6
+
+# Backbone 定义：双路输入，RGB 与 IR
+backbone:
+  - [-1, 1, IdentityInput, []]          # 0: 恒等输入
+  - [-1, 1, ModalitySelector, [1]]      # 1: RGB
+  - [-2, 1, ModalitySelector, [2]]      # 2: IR
+
+  # ===== RGB 分支 =====
+  - [1, 1, Conv, [64, 3, 2]]
+  - [-1, 1, Conv, [128, 3, 2]]
+  - [-1, 3, C2f, [128, True]]
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [-1, 6, C2f, [256, True]]           # RGB-P3
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [-1, 6, C2f, [512, True]]           # RGB-P4
+  - [-1, 1, Conv, [1024, 3, 2]]
+  - [-1, 3, C2f, [1024, True]]
+  - [-1, 1, SPPF, [1024, 5]]            # RGB-P5
+
+  # ===== IR 分支 =====
+  - [2, 1, Conv, [64, 3, 2]]
+  - [-1, 1, Conv, [128, 3, 2]]
+  - [-1, 3, C2f, [128, True]]
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [-1, 6, C2f, [256, True]]           # IR-P3
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [-1, 6, C2f, [512, True]]           # IR-P4
+  - [-1, 1, Conv, [1024, 3, 2]]
+  - [-1, 3, C2f, [1024, True]]
+  - [-1, 1, SPPF, [1024, 5]]            # IR-P5
+
+# Head：各尺度融合 + OBB 输出
+head:
+  - [[7, 17], 1, Concat, [1]]
+  - [-1, 3, C2f, [256]]                 # h_p3
+
+  - [[9, 19], 1, Concat, [1]]
+  - [-1, 3, C2f, [512]]                 # h_p4
+
+  - [[12, 22], 1, Concat, [1]]
+  - [-1, 3, C2f, [1024]]                # h_p5
+
+  - [[24, 26, 28], 1, OBB, [nc, 1]]     # 三尺度 OBB 检测头
+
+# Neck 配置：启用 FusionAttention
+neck:
+  type: panfpn_lite
+  in_channels: [256,512,1024]
+  fusion: fusion_attention
+  attn_reduction: 8
+
+# Head 配置：OBB 检测头
+head_cfg:
+  type: obb_head_v8
+  num_classes: 5
