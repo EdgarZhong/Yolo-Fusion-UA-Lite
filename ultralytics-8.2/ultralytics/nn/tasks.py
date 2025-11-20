@@ -398,6 +398,57 @@ class OBBModel(DetectionModel):
         """Initialize the loss criterion for the model."""
         return v8OBBLoss(self)
 
+from ultralytics.nn import FusionAttention
+class DualOBBModel(DetectionModel):
+    """双模态 YOLOv8 OBB 模型，支持 FusionAttention 融合"""
+
+    def __init__(self, cfg=None, ch=6, nc=None, verbose=True):
+        """
+        初始化双主干 OBB 模型：
+        - 输入通道固定为 6（RGB 三通道 + IR 三通道）
+        - 模型内部通过 ModalitySelector 切分模态
+        - 融合方式可选：concat 或 fusion_attention
+        """
+        # 加载配置
+        if isinstance(cfg, dict):
+            d = cfg
+        else:
+            from ultralytics.utils import yaml_model_load
+            d = yaml_model_load(cfg)
+        if nc:
+            d["nc"] = nc
+        d["ch"] = ch  # 强制 6 通道输入
+
+        super().__init__(cfg=d, ch=ch, nc=nc, verbose=verbose)
+
+        # 根据配置决定是否启用 FusionAttention
+        fusion_type = d.get("neck", {}).get("fusion", "concat")
+        if fusion_type == "fusion_attention":
+            self.fusion = FusionAttention(d["neck"]["in_channels"],
+                                          r=d["neck"].get("attn_reduction", 8))
+        else:
+            self.fusion = None
+
+    def init_criterion(self):
+        """初始化 OBB 任务的损失函数"""
+        return v8OBBLoss(self)
+
+    def forward(self, x_rgb, x_ir):
+        """前向传播：双路输入"""
+        xs_rgb = self.backbone(x_rgb)
+        xs_ir  = self.backbone_ir(x_ir)
+        if self.fusion:
+            xs = self.fusion(xs_rgb, xs_ir)
+        else:
+            xs = [torch.cat([a, b], dim=1) for a, b in zip(xs_rgb, xs_ir)]
+        y = self.neck(xs)
+        return self.head(y)
+
+    def predict(self, x, profile=False, visualize=False, augment=False, embed=None):
+        """预测接口：检查输入通道数"""
+        if isinstance(x, torch.Tensor) and x.size(1) != 6:
+            raise ValueError("DualOBBModel 仅支持 (B,6,H,W) 输入")
+        return super().predict(x, profile=profile, visualize=visualize, augment=augment, embed=embed)
 
 class DualBackboneOBBModel(DetectionModel):
     """
