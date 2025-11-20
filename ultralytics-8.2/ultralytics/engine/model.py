@@ -24,6 +24,19 @@ from ultralytics.utils import (
     emojis,
     yaml_load,
 )
+from ultralytics.nn.tasks import (
+    ClassificationModel, DetectionModel, OBBModel, SegmentationModel, PoseModel,
+    DualOBBModel   # 新增
+)
+
+TASK2MODEL = {
+    "classify": ClassificationModel,
+    "detect": DetectionModel,
+    "segment": SegmentationModel,
+    "pose": PoseModel,
+    "obb": OBBModel,
+    "dual_obb": DualOBBModel,   # 新增
+}
 
 
 class Model(nn.Module):
