@@ -13,7 +13,7 @@ from .tasks import (
     torch_safe_load,
     yaml_model_load,
 )
-
+from .modules.fusion_attention import FusionAttention
 __all__ = (
     "attempt_load_one_weight",
     "attempt_load_weights",
