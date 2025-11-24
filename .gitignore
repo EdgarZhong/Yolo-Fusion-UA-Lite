@@ -22,3 +22,6 @@ models/baseline/**
 models/formal/**
 !models/formal/
 !models/formal/.gitkeep
+# 保留 formal/dualbackbone-easy-obb-formal6 模型权重存放目录及其所有内容
+!models/formal/dualbackbone-easy-obb-formal6/
+!models/formal/dualbackbone-easy-obb-formal6/**

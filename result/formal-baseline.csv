@@ -1,0 +1,13 @@
+metric,value
+metrics/precision(B),0.0
+metrics/recall(B),0.0
+metrics/mAP50(B),0.0
+metrics/mAP50-95(B),0.0
+fitness,0.0
+
+class,precision,recall,ap50,ap
+car,0.0,0.0,0.0,0.0
+truck,0.0,0.0,0.0,0.0
+bus,0.0,0.0,0.0,0.0
+van,0.0,0.0,0.0,0.0
+freight_car,0.0,0.0,0.0,0.0

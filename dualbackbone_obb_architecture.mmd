@@ -1,0 +1,85 @@
+%% 双主干简单拼接 OBB 基线模型架构（Mermaid）
+%% 详细中文注释：
+%% - 输入固定为 6 通道：(RGB3 + IR3)，形状 (B,6,H,W)
+%% - 通过两个 ModalitySelector 将 6 通道切分为两路：RGB 与 IR（各 3 通道）
+%% - 两路主干分别与 YOLOv8-OBB 的 backbone 等价（P3/P4/P5 三个尺度输出）
+%% - 颈部按尺度进行基础融合：Concat 后接 C2f 规整通道（256/512/1024）
+%% - OBB 检测头接收三尺度特征，输出旋转框及分类分数
+%% - 与仓库内 ultralytics-8.2 的 DualBackboneOBBModel 一致（参见 ultralytics-8.2/ultralytics/nn/tasks.py）
+
+flowchart TD
+    %% ============= 输入与模态切分 =============
+    A["输入: 6 通道图像<br/>RGB(3) ＋ IR(3)<br/>形状: (B,6,H,W)"] --> B["IdentityInput<br/>恒等输入, 建立图起点"]
+    B --> C["ModalitySelector(索引=1)<br/>选择 RGB 3 通道"]
+    B --> D["ModalitySelector(索引=2)<br/>选择 IR 3 通道"]
+
+    %% ============= RGB 主干（与 YOLOv8-OBB backbone 等价） =============
+    subgraph RGBrgb[RGB 主干]
+        direction TB
+        E1["Conv 64, stride=2"] --> E2["Conv 128, stride=2"]
+        E2 --> E3["C2f 128, 重复=3"]
+        E3 --> E4["Conv 256, stride=2"]
+        E4 --> E5["C2f 256, 重复=6"]:::p3
+        E5 --> E6["Conv 512, stride=2"]
+        E6 --> E7["C2f 512, 重复=6"]:::p4
+        E7 --> E8["Conv 1024, stride=2"]
+        E8 --> E9["C2f 1024, 重复=3"]
+        E9 --> E10["SPPF 1024"]:::p5
+    end
+
+    %% ============= IR 主干（与 YOLOv8-OBB backbone 等价） =============
+    subgraph IRir[IR 主干]
+        direction TB
+        F1["Conv 64, stride=2"] --> F2["Conv 128, stride=2"]
+        F2 --> F3["C2f 128, 重复=3"]
+        F3 --> F4["Conv 256, stride=2"]
+        F4 --> F5["C2f 256, 重复=6"]:::p3
+        F5 --> F6["Conv 512, stride=2"]
+        F6 --> F7["C2f 512, 重复=6"]:::p4
+        F7 --> F8["Conv 1024, stride=2"]
+        F8 --> F9["C2f 1024, 重复=3"]
+        F9 --> F10["SPPF 1024"]:::p5
+    end
+
+    %% 将模态输出接入各自主干
+    C --> E1
+    D --> F1
+
+    %% ============= 颈部：各尺度融合（Concat + C2f） =============
+    E5 -- "P3(RGB)" --> M1
+    F5 -- "P3(IR)"  --> M1
+    M1["Concat(P3_RGB, P3_IR)<br/>C2f 256<br/>输出: h_p3"]
+
+    E7 -- "P4(RGB)" --> M2
+    F7 -- "P4(IR)"  --> M2
+    M2["Concat(P4_RGB, P4_IR)<br/>C2f 512<br/>输出: h_p4"]
+
+    E10 -- "P5(RGB)" --> M3
+    F10 -- "P5(IR)"  --> M3
+    M3["Concat(P5_RGB, P5_IR)<br/>C2f 1024<br/>输出: h_p5"]
+
+    %% ============= 检测头（OBB） =============
+    M1 --> H["OBB 检测头<br/>输入: h_p3/h_p4/h_p5<br/>输出: (cx,cy,w,h,angle,conf,cls)"]
+    M2 --> H
+    M3 --> H
+    H --> Q["旋转框输出<br/>含多边形坐标与类别分数"]
+
+    %% ============= 语义说明（注释） =============
+    %% ModalitySelector 语义：在 6 通道输入下，索引=1 选择前 3 通道(RGB)，索引=2 选择后 3 通道(IR)。
+    %% P3/P4/P5 语义：代表不同下采样尺度的特征图，分别经 C2f/Conv/SPPF 构建，承载局部到全局的多尺度信息。
+    %% 融合策略：基础级融合（拼接后经 C2f 规整通道），不引入复杂注意力，追求简单、稳定、可复现实验基线。
+    %% OBB 头：接受三尺度特征，预测旋转框参数(cx,cy,w,h,angle)及 conf/cls，用于旋转框检测任务。
+
+    %% ============= 样式（高亮关键模块） =============
+    classDef in fill:#ffd1f0,stroke:#333,stroke-width:2px;
+    classDef backbone fill:#d8f8d8,stroke:#333,stroke-width:1.5px;
+    classDef neck fill:#cfe8ff,stroke:#333,stroke-width:1.5px;
+    classDef head fill:#ffdfcf,stroke:#333,stroke-width:2px;
+    classDef p3 fill:#f0fff0,stroke:#4caf50,stroke-width:1px;
+    classDef p4 fill:#f0fff0,stroke:#4caf50,stroke-width:1px;
+    classDef p5 fill:#f0fff0,stroke:#4caf50,stroke-width:1px;
+
+    class A,B,C,D in
+    class RGBrgb,IRir backbone
+    class M1,M2,M3 neck
+    class H head

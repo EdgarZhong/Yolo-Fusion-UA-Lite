@@ -57,7 +57,7 @@
    *   记录所有实验配置和最终的性能指标，作为后续对比的基准。
 
 ### **阶段二：实现与验证高级融合模块**
-
+此阶段正在实施中,实施方法见`FusionAttention模块实施手册.md`
 1.  **实现融合模块：**
     *   在一个独立的自定义模块文件中，实现高级融合策略的逻辑。
 
@@ -65,17 +65,17 @@
     *   扩展第一阶段编写的模型构建模块，使其能够解析并实例化这个新的高级融合模块。
 
 3.  **定义新模型配置：**
-    *   创建一个新的配置文件，仅将融合操作的类型从基础拼接修改为新的高级融合模块。
+    *   创建一个新的配置文件，**仅将融合操作的类型从基础拼接修改为新的高级融合模块**。
 
 4.  **进行对比实验：**
-    *   使用新的配置文件，在与第一阶段完全相同的实验条件下，重新执行主训练脚本和验证脚本。
+    *   使用新的配置文件`FusionAttention.yaml`，在与第一阶段完全相同的实验条件下，重新执行主训练脚本和验证脚本。
 
 5.  **分析与结论：**
     *   将新模型的性能指标与基线模型进行严格的量化比较和可视化分析，得出关于高级融合模块有效性的最终结论。
 
 ## 项目核心信息
 
-   **当前阶段：阶段一**
+   **阶段一：已完成**
 - 任务类型：YOLO‑OBB（旋转框检测），标签为 6 列格式 `class cx cy w h angle`（归一化，角度为弧度），样例见 `data/train/trainlabels_yolo_obb/00001.txt`
 - 输入模态与顺序约定：
   - 目录命名：`data/<subset>/<subset>img` 存放 RGB，`data/<subset>/<subset>imgr` 存放 IR，`data/<subset>/<subset>labels_yolo_obb` 存放适用于 OBB 任务的 6 列标签。
@@ -104,13 +104,15 @@
   - 预处理脚本：`src/dataset_preprocess/preprocess_obb.py`、`verify_obb_preview.py`、`clean_mismatch.py`
 - 数据集预处理已完成√
 - **已保证此描述实际准确，无需怀疑**
-- **必须直接修改`ultralytics-8.2/`目录中源码的标签映射和数据集加载逻辑以适配约定**
+- **修改`ultralytics-8.2/`目录中源码的标签映射和数据集加载逻辑以适配约定--此项已完成**
 
 ### 训练与验证
 
- **基线模型务必存放在 `models/baseline/` 目录中**
+ - **基线模型务必存放在 `models/baseline/` 目录中**
  - 快速验证脚本：`src/trainning/baseline_quick_train.py`（单轮次训练，`fraction=0.05`，`imgsz=832`，训练 `rect=False`，验证/测试 `rect=True`）
- - 正式训练脚本：`src/trainning/train_formal.py`（顶层宏统一管理超参；早停 `patience=10`；显式打印 `optimizer/lr0` 配置以便日志核对）
+ - **FusionAttention 模型务必存放在 `models/fusion-attention/` 目录中**
+ - 快速训练验证脚本：`src/trainning/fusion_attention_quick_train.py`（单轮次训练，`fraction=0.05`，`imgsz=832`，训练 `rect=False`，验证/测试 `rect=True`）
+ - 正式训练脚本：`src/trainning/train_formal.py`（顶层宏统一管理超参；早停 `patience=10`；显式打印 `optimizer/lr0` 配置以便日志核对）**正式训练脚本可以指定模型配置文件和权重输入目录。**
  - 训练脚本支持通过参数/宏控制训练数据比例与数据输入策略，保持与本文档约定一致
 
 
@@ -127,6 +129,8 @@
 - `yolo-fuse/`研究记录：`yolo_fuse_invest.md`（融合方法调研摘要）
 - Conda 激活命令位于：`start-conda`
 - `ultralytics-8.2/` 目录下的docs包含可以参阅的文档
+- FusionAttention 模块实施手册：`FusionAttention模块实施手册.md`
+
 
 ### 环境搭建（基于 ultralytics-8.2，推荐稳定路径）
 
@@ -202,3 +206,13 @@ YOLO-Fusion-UA-Lite/
 ├─ start-conda      （Conda 激活脚本）
 └─ .gitignore
 ```
+
+### Git 状态同步记录 (2025-11-19)
+
+- **事件**: 修复了本地与远程 `main` 分支的历史记录分叉问题。
+- **操作**:
+    1.  将远程 `main` 分支强制回滚至本地的稳定版本 (`CPU方法解决验证爆显存问题`)。
+    2.  将分叉前暂存的开发中工作 (`temp-analysis-stash`) 恢复至新的特性分支 `feature/gpu-validation-fix`。
+- **当前状态**:
+    - `main` 分支已与远程同步，处于稳定状态。
+    - `feature/gpu-validation-fix` 分支已创建，用于后续的使用 GPU 计算验证阶段爆显存相关问题的修复。

@@ -422,16 +422,18 @@ class DualBackboneOBBModel(DetectionModel):
         # 加载基础 OBB YAML 作为主干模板
         base_path = Path(__file__).parents[1] / "cfg" / "models" / "v8" / "yolov8-obb.yaml"
         base = yaml_model_load(str(base_path))
-        # 选择配置来源：
+        # 选择配置来源（强制使用配置文件或字典，禁用程序化构建）：
         # - 若传入字典，直接使用；
         # - 若传入字符串/Path，按 YAML 文件加载；
-        # - 否则，程序化生成双主干融合配置（参考官方 obb 主干）。
+        # - 若未提供 `cfg`，抛出异常，禁止程序化构建（确保实验可复现、配置可追踪）。
         if isinstance(cfg, dict):
             d = cfg
         elif isinstance(cfg, (str, Path)):
             d = yaml_model_load(str(cfg))
         else:
-            d = self._build_dual_obb_cfg(base)
+            raise ValueError(
+                "DualBackboneOBBModel 已禁用程序化构建，必须提供配置文件路径或配置字典(cfg)。"
+            )
         if nc:
             d["nc"] = nc
         d["ch"] = ch  # 强制 6 通道输入
@@ -441,87 +443,13 @@ class DualBackboneOBBModel(DetectionModel):
 
     def _build_dual_obb_cfg(self, base):
         """
-        基于官方 `yolov8-obb.yaml`，程序化生成“双主干 + 基础融合 + OBB 头”的配置字典。
+        程序化构建器已停用：为保证实验可复现与配置可版本化管理，模型必须通过配置文件或字典提供。
 
-        实现要点：
-        - 在 `backbone` 开头添加 `IdentityInput` 与两路 `ModalitySelector`，分别选择 RGB/IR。
-        - 分别为 RGB/IR 构建一套与基础 OBB 主干等价的层序列，并记录各尺度输出的索引（P3/P4/P5）。
-        - 在 `head` 中对对应尺度进行 `Concat`，后接 `C2f` 将通道规整到标准值（256/512/1024），最后 `OBB` 检测头使用三尺度输出。
+        若仍调用该方法，将抛出异常提示使用 YAML/Dict 方式定义模型结构。
         """
-        scales = base.get("scales", None)
-        nc = base.get("nc", 80)
-        bb = base["backbone"]
-
-        layers = []
-        # 0: 恒等输入，建立分支起点语义
-        layers.append([-1, 1, "IdentityInput", []])  # idx0
-        # 1: RGB 选择器，2: IR 选择器
-        layers.append([-1, 1, "ModalitySelector", [1]])  # idx1 RGB
-        layers.append([-2, 1, "ModalitySelector", [2]])  # idx2 IR
-
-        def add_branch(start_idx):
-            """将基础主干序列复制到当前图，并返回 P3/P4/P5 的输出索引。"""
-            p3_idx = p4_idx = p5_idx = None
-            # 按照官方 obb backbone 的语义阶段记录：
-            # P3: Conv(256)->C2f(256,6次)
-            # P4: Conv(512)->C2f(512,6次)
-            # P5: Conv(1024)->C2f(1024,3次)->SPPF(1024)
-            # 构建时逐层追加，并在关键节点记录索引
-            # 3: Conv(64,3,2)
-            layers.append([start_idx, 1, "Conv", [64, 3, 2]])
-            # 4: Conv(128,3,2)
-            layers.append([-1, 1, "Conv", [128, 3, 2]])
-            # 5: C2f(128, True, 3)
-            layers.append([-1, 3, "C2f", [128, True]])
-            # 6: Conv(256,3,2)
-            layers.append([-1, 1, "Conv", [256, 3, 2]])
-            # 7: C2f(256, True, 6)
-            layers.append([-1, 6, "C2f", [256, True]])
-            p3_idx = len(layers) - 1
-            # 8: Conv(512,3,2)
-            layers.append([-1, 1, "Conv", [512, 3, 2]])
-            # 9: C2f(512, True, 6)
-            layers.append([-1, 6, "C2f", [512, True]])
-            p4_idx = len(layers) - 1
-            # 10: Conv(1024,3,2)
-            layers.append([-1, 1, "Conv", [1024, 3, 2]])
-            # 11: C2f(1024, True, 3)
-            layers.append([-1, 3, "C2f", [1024, True]])
-            # 12: SPPF(1024,5)
-            layers.append([-1, 1, "SPPF", [1024, 5]])
-            p5_idx = len(layers) - 1
-            return p3_idx, p4_idx, p5_idx
-
-        # 构建两路主干
-        rgb_p3, rgb_p4, rgb_p5 = add_branch(1)
-        ir_p3, ir_p4, ir_p5 = add_branch(2)
-
-        # Head：各尺度基础融合 + 规整
-        head = []
-        # 融合 P3
-        head.append([[rgb_p3, ir_p3], 1, "Concat", [1]])
-        head.append([-1, 3, "C2f", [256, False]])  # 输出记为 h_p3
-        h_p3 = len(layers) + len(head) - 1
-        # 融合 P4
-        head.append([[rgb_p4, ir_p4], 1, "Concat", [1]])
-        head.append([-1, 3, "C2f", [512, False]])
-        h_p4 = len(layers) + len(head) - 1
-        # 融合 P5
-        head.append([[rgb_p5, ir_p5], 1, "Concat", [1]])
-        head.append([-1, 3, "C2f", [1024, False]])
-        h_p5 = len(layers) + len(head) - 1
-
-        # OBB 头：三尺度
-        head.append([[h_p3, h_p4, h_p5], 1, "OBB", [nc, 1]])
-
-        d = {
-            "nc": nc,
-            "ch": 6,
-            "scales": scales,
-            "backbone": layers,
-            "head": head,
-        }
-        return d
+        raise NotImplementedError(
+            "已禁用程序化构建，请使用配置文件(YAML)或字典(dict)定义模型结构。"
+        )
 
     def init_criterion(self):
         """初始化 OBB 任务的损失函数。"""
