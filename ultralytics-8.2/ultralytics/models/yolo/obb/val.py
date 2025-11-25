@@ -40,7 +40,7 @@ class OBBValidator(DetectionValidator):
         """应用旋转框 NMS 到预测输出，并在验证阶段提高置信度阈值与放宽超时限制。"""
         # 1) 提高置信度过滤阈值：在不改变外部传参的前提下，验证阶段将阈值下限提升到 0.33
         #    目的：减少低分候选的数量，降低后续 NxN/NxM 计算规模与 NMS 耗时/显存峰值。
-        conf_thres = float(getattr(self.args, "conf", 0.33))
+        conf_thres = float(getattr(self.args, "conf", 0.5))
 
         # 2) 放宽 NMS 超时阈值：将每图的时间片设置为 0.1s，使得在常见 batch=10~12 时总时限≈3s
         #    Ultralytics 内部公式：time_limit = 2.0 + max_time_img * bs

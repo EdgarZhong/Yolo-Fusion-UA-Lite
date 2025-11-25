@@ -7,6 +7,8 @@ __pycache__/
 .idea/
 .DS_Store
 yolo-fuse/
+yolov8n.pt
+
 data/**
 !data/**/
 !data/classes.txt
@@ -19,9 +21,16 @@ data/**
 models/baseline/**
 !models/baseline/
 !models/baseline/.gitkeep
+models/fusion-attention/**
+!models/fusion-attention/
+!models/fusion-attention/.gitkeep
 models/formal/**
 !models/formal/
 !models/formal/.gitkeep
 # 保留 formal/dualbackbone-easy-obb-formal6 模型权重存放目录及其所有内容
 !models/formal/dualbackbone-easy-obb-formal6/
 !models/formal/dualbackbone-easy-obb-formal6/**
+# 保留 formal/fusion-attention/dualbackbone-fusionattention-obb 模型权重存放目录（该模型正在训练中）
+!models/formal/fusion-attention/
+!models/formal/fusion-attention/dualbackbone-fusionattention-obb/
+!models/formal/fusion-attention/dualbackbone-fusionattention-obb/**

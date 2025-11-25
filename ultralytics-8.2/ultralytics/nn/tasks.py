@@ -34,6 +34,7 @@ from ultralytics.nn.modules import (
     CBLinear,
     IdentityInput,
     ModalitySelector,
+    FusionAttention,
     Classify,
     Concat,
     Conv,
@@ -1085,6 +1086,12 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             args = [ch[f]]
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
+        elif m is FusionAttention:
+            assert isinstance(f, (list, tuple)) and len(f) == 2
+            assert ch[f[0]] == ch[f[1]], "FusionAttention 两路输入通道必须一致"
+            c2 = ch[f[0]]
+            if not args:
+                args = [c2]
         elif m in {Detect, WorldDetect, Segment, Pose, OBB, ImagePoolingAttn, v10Detect}:
             args.append([ch[x] for x in f])
             if m is Segment:

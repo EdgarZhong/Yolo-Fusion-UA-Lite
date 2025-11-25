@@ -84,6 +84,7 @@ from .transformer import (
     TransformerEncoderLayer,
     TransformerLayer,
 )
+from .fusion import FusionAttention
 
 __all__ = (
     "Conv",
@@ -154,4 +155,5 @@ __all__ = (
     "Attention",
     "PSA",
     "SCDown",
+    "FusionAttention",
 )

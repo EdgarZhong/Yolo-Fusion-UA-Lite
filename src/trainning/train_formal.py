@@ -18,18 +18,18 @@ import sys
 
 # =============== 宏定义区域（可根据需要修改） ===============
 # 模型与数据配置路径（相对仓库根目录）
-MODEL_CFG = "src/cfg/model/dualbackbone_easy_obb.yaml"
+MODEL_CFG = "src/cfg/model/dualbackbone_fusionattention_obb.yaml"
 DATA_CFG = "src/cfg/datasets/dual_obb_dronevehicle.yaml"
 
 # 训练超参数
-EPOCHS = 100          # 建议：100 ~ 300。对于基线实验，100轮足以观察收敛趋势和性能。
+EPOCHS = 150          # 建议：100 ~ 300。对于基线实验，100轮足以观察收敛趋势和性能。
 BATCH = 12             # 建议：根据显存最大化。如果显存允许（如24G），尝试16或32以稳定梯度。8是安全起步值。
 WORKERS = 2           # 建议：根据CPU核数。通常设为4或8能保证数据加载不成为瓶颈。
 DEVICE = 0            # GPU0，保持不变
 FRACTION = 1.0        # 正式训练必须为 1.0 (使用全量数据)
 IMG_SIZE = 832        # 保持 832。对于 840x712 的原图，这是最佳的 32 倍数填充尺寸。
 RECT_TRAIN = False    # 保持 False。确保 Shuffle 开启，对训练至关重要。
-PATIENCE = 10         # 早停耐心值（无提升的最大容忍 epoch 数），正式训练可调整
+PATIENCE = 15         # 早停耐心值（无提升的最大容忍 epoch 数），正式训练可调整
 
 # 优化器与学习率设置（显式配置与显示）
 # - OPTIMIZER 支持 "auto"（根据任务自动选择），或显式指定如 "SGD"、"AdamW" 等
@@ -53,8 +53,8 @@ SCALE = 1.0
 SHEAR = 0.0
 
 # 输出目录与实验名
-PROJECT_DIR = "models/formal/baseline"
-RUN_NAME = "dualbackbone-easy-obb-formal"
+PROJECT_DIR = "models/formal/fusion-attention"
+RUN_NAME = "dualbackbone-fusionattention-obb"
 
 # ==========================================================
 
@@ -116,6 +116,9 @@ def main():
         "val": True,
         "patience": PATIENCE,
         "plots": False,
+        # 稳定性增强：禁用 AMP，启用确定性算法，避免潜在的半精度/核选择问题
+        # "amp": False,
+        # "deterministic": True,
     }
 
     print("[Train][OBB] 正式训练启动，统一宏定义参数如下：")

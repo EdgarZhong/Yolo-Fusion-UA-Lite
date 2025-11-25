@@ -1,4 +1,23 @@
-## 阶段一工作记录（双模态 OBB，双主干模型）
+
+## 阶段二工作记录（FusionAttention模块，双主干模型）
+### 2025-11-25 变更记录（进入阶段二，实现FusionAttention模块并替换简单拼接）
+- 实现 FusionAttention 模块，替换简单拼接。
+  - 位置：`ultralytics-8.2/ultralytics/nn/modules/fusion.py:1-100`
+- 新增快速训练验证脚本 `src/trainning/fusion_attention_quick_train.py`，用于验证 FusionAttention 模块的有效性。
+- 训练过程中遭遇不明CUDA 非法访问报错,问题分析:
+  - 触发位置：报错在 torch.nn.functional.silu 的 CUDA 内核执行阶段，调用链进入 ultralytics.nn.modules.conv.Conv.forward 的激活部分。这类 “illegal memory access” 往往是先前内核造成的越界或不兼容状态在后续算子中被异步报告。
+  - 差异因素：基线模型未出现该问题，而 FusionAttention 版本在第 17 轮触发，说明新增模块或训练配置与 CUDA/AMP 交互存在不稳定因素。
+  - 可能成因：
+    - AMP 半精度下的 in-place 激活或某些分支导致数值异常，叠加 cudnn 非确定性内核选择，偶发非法访问。
+    - Inception 分支拼接后的张量非连续导致后续 BN/激活的内核在特定 batch/shape 下出错。
+    - 训练规模设置（较大的 batch）会提升并发与内核选择的不确定性，放大上述问题。
+  修复与代码修改
+  - 稳定性增强（FusionAttention）
+    - 使 Inception 输出 contiguous ，确保后续 BN/激活的内存布局稳定。
+    - FusionAttention模块全部启用输出contiguous，确保后续操作内存访问稳定性。
+    - 全局范围内设置SiLu.inplace=False，避免in-place操作导致的数值异常。
+  - 新增断点续训脚本 `src/trainning/resume_train.py`，支持Last.pt继续训练。
+  - batch_size 从 12 调整为 8，确保训练只在专用显存上进行，目前观察到似乎可以稳定进行训练了。不会再出现未知CUDA非法访问报错。
 
 ### 2025-11-24 变更记录（NMS 阈值与测试脚本重构）
 
@@ -13,6 +32,11 @@
 - 自动验证：
   - 已运行快速训练（1 epoch）并完成评估，结果保存至 `result/quick-baseline`。
   - 已使用正式权重目录 `models/formal/baseline/dualbackbone-easy-obb-formal-3` 完成推理评估，结果保存至 `result/formal-3`。
+- 推理结果可视化：
+  - 已实现通用推理可视化脚本 `src/testing/view_inference.py`，从 `result/<run_name>/predictions.json` 加载预测结果，
+    并从 `data/test` 加载左右配对的 RGB/IR 原始图，在窗口中左右并排显示，
+    将推理结果的旋转框（poly 多边形）以绿色绘制在两张图片上，通过左右方向键切换样本。
+    使用方法：`python .\src\testing\view_inference.py --pred-dir result/formal-baseline`
 
 示例命令：
 
