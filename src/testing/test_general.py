@@ -44,13 +44,13 @@ from ultralytics.utils.torch_utils import select_device  # noqa: E402
 
 # ===================== 路径与常量约定 =====================
 DATA_CFG = ROOT / "src/cfg/datasets/dual_obb_dronevehicle.yaml"  # 数据集 YAML（绝对路径）
-WEIGHTS_DIR = ROOT / "models/formal/dualbackbone-easy-obb-formal6"  # 训练输出目录
+WEIGHTS_DIR = ROOT / "models/formal/fusion-attention/dualbackbone-fusionattention-obb"  # 训练输出目录
 DEFAULT_RESULT_DIR = ROOT / "result"  # 默认评估输出根目录
-DEFAULT_RUN_NAME = "baseline-100epoch"  # 默认评估结果文件名（不含扩展名）
+DEFAULT_RUN_NAME = "fusionattention-only-120epoch"  # 默认评估结果文件名（不含扩展名）
 
 IMG_SIZE = 832  # 按项目约定
 BATCH = 12  # 可根据显存/CPU性能调整
-CONF_THRES = 0.001  # 使用官方默认阈值提高模型测试表现效果
+CONF_THRES = 0.25  # 使用官方默认阈值提高模型测试表现效果
 IOU_THRES = 0.5
 MAX_DET = 300
 
@@ -202,7 +202,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", type=str, default="0", help="运行设备：cpu 或 GPU 索引，如 0/1")
     parser.add_argument("--weights", type=str, default="", help="权重文件或包含 weights/ 的目录（可选）")
-    parser.add_argument("--model-name", type=str, default="baseline", help="模型名称（用于结果文件命名）")
+    parser.add_argument("--model-name", type=str, default=DEFAULT_RUN_NAME, help="模型名称（用于结果文件命名）")
     parser.add_argument("--result-dir", type=str, default=str(DEFAULT_RESULT_DIR), help="结果输出目录")
     parser.add_argument("--test-ratio", type=float, default=1.0, help="测试集比例 (0-1]，默认 1.0 全量")
     args_ns = parser.parse_args()

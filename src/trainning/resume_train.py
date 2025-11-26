@@ -59,6 +59,12 @@ def main():
     # 运行信息提示
     print("[Resume][OBB] 断点续训启动：")
     print(f"resume={args.resume}")
+
+    # 强制开启验证和绘图，确保 Loss 被计算和记录
+    overrides["val"] = True
+    overrides["plots"] = True
+    overrides["save"] = True
+
     if args.imgsz is not None:
         print(f"override imgsz={args.imgsz}")
     if args.batch is not None:

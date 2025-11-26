@@ -1,11 +1,14 @@
 """
-图表绘制脚本：读取 `result/baseline-100epoch.json`，绘制测试精度评估柱状图并保存
+通用单模型测试结果展示脚本：自动遍历 `result/` 目录下的所有 `*.json` 测试结果文件，
+为每个 JSON 绘制一张指标汇总图片并按文件名保存到同目录。
 
-输出：
-- `result/baseline-100epoch-metrics.png`
+功能特性：
+- 自动查找：无需命令行参数，脚本会自动扫描 `result/*.json`；
+- 指标展示：绘制 2x3 子图（前 5 类的 precision/recall/AP50/AP 柱状图 + 1 张总体指标柱状图）；
+- 命名规则：对文件 `result/<name>.json`，输出 `result/<name>-metrics.png`；
 
 使用：
-- `python src/testing/plot_baseline_metrics.py`
+- `python src/testing/plot_single_model_metrics.py`
 """
 
 from __future__ import annotations
@@ -14,14 +17,15 @@ import json
 from pathlib import Path
 import sys
 
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
 from matplotlib import font_manager
 
-# 仓库根路径与结果文件路径
+# 仓库根路径与结果目录（固定扫描 result/ 下的所有 *.json）
 ROOT = Path(__file__).resolve().parents[2]
-RESULT_JSON = ROOT / "result/baseline-100epoch.json"
-OUT_PNG = ROOT / "result/baseline-100epoch-metrics.png"
+RESULT_DIR = ROOT / "result"
 
 
 def _setup_cn_font() -> str:
@@ -60,24 +64,28 @@ def _setup_cn_font() -> str:
         except Exception:
             continue
     return ""
-def load_metrics() -> dict:
+
+
+def load_metrics(json_path: Path) -> dict:
     """
-    读取评估结果 JSON。
-    返回：包含 `metrics/precision(B)`, `metrics/recall(B)`, `metrics/mAP50(B)`, `metrics/mAP50-95(B)` 的字典。
+    读取指定评估结果 JSON。
+    参数：
+    - json_path：结果 JSON 文件绝对路径
+    返回：包含 `classes` 与总体指标键（如 `metrics/precision(B)` 等）的字典。
     """
-    if not RESULT_JSON.exists():
-        raise FileNotFoundError(f"未找到评估结果文件：{RESULT_JSON.as_posix()}，请先运行测试脚本生成")
-    with open(RESULT_JSON, "r", encoding="utf-8") as f:
+    if not json_path.exists():
+        raise FileNotFoundError(f"未找到评估结果文件：{json_path.as_posix()}，请先运行测试脚本生成")
+    with open(json_path, "r", encoding="utf-8") as f:
         data = json.load(f)
     return data
 
 
-def plot_metrics(metrics: dict) -> None:
+def plot_metrics(metrics: dict, out_png: Path) -> None:
     """
     在单个画布上绘制 6 张子图（2x3）：
     - 5 个类别的指标柱状图：precision / recall / AP50 / AP
     - 1 个总体指标柱状图：precision(B) / recall(B) / mAP50(B) / mAP50-95(B)
-    输出保存到 OUT_PNG
+    输出保存到 `out_png`
     """
     # 读取每类详细指标与总体指标
     classes = metrics.get("classes", [])
@@ -127,22 +135,40 @@ def plot_metrics(metrics: dict) -> None:
     for j in range(len(classes_sorted), 5):
         axes[j].axis("off")
 
-    OUT_PNG.parent.mkdir(parents=True, exist_ok=True)
+    out_png.parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
-    plt.savefig(OUT_PNG.as_posix(), dpi=200)
-    print(f"已保存图表：{OUT_PNG.as_posix()}")
+    fig.savefig(out_png.as_posix(), dpi=200)
+    plt.close(fig)
+    print(f"已保存图表：{out_png.as_posix()}")
 
 
 def main():
+    """
+    主入口：
+    - 设置中文字体环境；
+    - 自动遍历 `result/` 目录下的所有 `*.json` 文件；
+    - 为每个文件生成同名的 `-metrics.png` 图片。
+    """
     _setup_cn_font()
-    metrics = load_metrics()
-    plot_metrics(metrics)
+
+    if not RESULT_DIR.exists():
+        print(f"结果目录不存在：{RESULT_DIR.as_posix()}，请先运行测试评估脚本生成 JSON 结果")
+        return
+
+    json_files = sorted(RESULT_DIR.glob("*.json"))
+    if not json_files:
+        print(f"未在 {RESULT_DIR.as_posix()} 发现任何 JSON 结果文件")
+        return
+
+    for jf in json_files:
+        try:
+            metrics = load_metrics(jf)
+        except Exception as e:
+            print(f"跳过文件 {jf.name}：读取失败 {e}")
+            continue
+        out_png = jf.with_name(f"{jf.stem}-metrics.png")
+        plot_metrics(metrics, out_png)
 
 
 if __name__ == "__main__":
-    # 确保 Matplotlib 在非交互环境也能工作
-    if "matplotlib" in sys.modules:
-        import matplotlib
-
-        matplotlib.use("Agg")
     main()
