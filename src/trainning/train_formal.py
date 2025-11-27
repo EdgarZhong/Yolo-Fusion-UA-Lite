@@ -27,7 +27,7 @@ BATCH = 10             # 建议：根据显存最大化。如果显存允许（�
 WORKERS = 2           # 建议：根据CPU核数。通常设为4或8能保证数据加载不成为瓶颈。
 DEVICE = 0            # GPU0，保持不变
 FRACTION = 1.0        # 正式训练必须为 1.0 (使用全量数据)
-IMG_SIZE = 832        # 保持 832。对于 840x712 的原图，这是最佳的 32 倍数填充尺寸。
+IMG_SIZE = 640        # 与裁切后数据集统一：640x512，验证与推理采用 rect=True 保持比例
 RECT_TRAIN = False    # 保持 False。确保 Shuffle 开启，对训练至关重要。
 PATIENCE = 15         # 早停耐心值（无提升的最大容忍 epoch 数），正式训练可调整
 
@@ -38,7 +38,7 @@ OPTIMIZER = "SGD"
 LR0 = 0.01
 
 # 数据增强开关（全部关闭，保持原生分布）
-MOSAIC = 0.0
+MOSAIC = 1.0 # 使用白边裁切数据集时开启马赛克增强，尝试提升训练效果
 MIXUP = 0.0
 COPY_PASTE = 0.0
 ERASING = 0.0

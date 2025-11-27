@@ -9,10 +9,10 @@
 # 数据集根目录（绝对路径，按 README 约定指向仓库根）
 path: D:/Code/DeepLearning/YOLO-Fusion-UA-Lite
 
-# 训练/验证/测试图像目录（请指向 RGB 目录；IR 目录将由数据集类自动推断为同级的 `*imgr/`）
-train: data/train/trainimg
-val: data/val/valimg
-test: data/test/testimg
+# 训练/验证/测试图像目录（切换为裁切后的数据集；IR 目录由数据集类自动推断为同级的 `*imgr/`）
+train: data_croped/train/trainimg
+val: data_croped/val/valimg
+test: data_croped/test/testimg
 
 # 类别数与类别名（来源：`data/classes.txt`）
 # 注意：Ultralytics 支持 names 为 list 或 dict，此处使用 list 以保持简洁。

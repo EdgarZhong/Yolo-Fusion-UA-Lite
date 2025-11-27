@@ -97,16 +97,19 @@
 
 ### 进度情况
    **阶段一：已完成**
-   **阶段二：代码已完成，FA-Concat模型正在训练**
+   **阶段二：已完成**
    **阶段三：待实施**
 
-### 重要约定
+### 重要约定（更新）
 - 任务类型：YOLO‑OBB（旋转框检测），标签为 6 列格式 `class cx cy w h angle`（归一化，角度为弧度），样例见 `data/train/trainlabels_yolo_obb/00001.txt`
 - 输入模态与顺序约定：
   - 目录命名：`data/<subset>/<subset>img` 存放 RGB，`data/<subset>/<subset>imgr` 存放 IR，`data/<subset>/<subset>labels_yolo_obb` 存放适用于 OBB 任务的 6 列标签。
   - 模态顺序：始终为 “1: img(RGB), 2: imgr(IR)”；两个模态均为三通道输入。
-- 分辨率策略（更新）：训练阶段使用 `imgsz=832` 且 `rect=False`（开启随机打乱，`mosaic=0`），不进行任何裁切或标签重计算；验证与测试阶段使用 `imgsz=832` 且 `rect=True`，不做其它操作。
-- 数据增强：默认禁用（mosaic/mixup/copy_paste/erasing/flip/HSV 等均关闭），保证原生分布
+- 分辨率策略 **（采用data/下的未裁切数据集）**：训练阶段使用 `imgsz=832` 且 `rect=False`（开启随机打乱，`mosaic=0`），不进行任何裁切或标签重计算；验证与测试阶段使用 `imgsz=832` 且 `rect=True`，不做其它操作。
+- 数据增强 **（采用data/下的未裁切数据集）**：默认禁用（mosaic/mixup/copy_paste/erasing/flip/HSV 等均关闭），保证原生分布
+
+- 分辨率策略 **（采用data_croped/下的裁切数据集）**：训练阶段使用 `imgsz=640` 且 `rect=False`（开启随机打乱），验证与测试阶段使用 `imgsz=640` 且 `rect=True` 保持 640×512 的矩形分桶。
+- 数据增强 **（采用data_croped/下的裁切数据集）**：正式训练开启 `mosaic=1.0`，其余增强（mixup/copy_paste/erasing/flip/HSV 等）保持关闭，保证主分布稳定；验证阶段不使用增强。
 
 ### 环境与激活
 
@@ -116,29 +119,43 @@
   - `conda activate .\\.conda\\ultra82-py312`
 - 版本锁定：`ultralytics==8.2.103`、`numpy==1.26.4`、`torch==2.6.0+cu124`（CUDA 12.4）
 
-### 数据与目录结构
+### 数据与目录结构（裁切后）
 
-- 图像目录（统一约定）：
+- 原始图像目录（统一约定）：
   - `data/train/trainimg/`（RGB） 与 `data/train/trainimgr/`（IR）
   - `data/val/valimg/`（RGB）   与 `data/val/valimgr/`（IR）
   - `data/test/testimg/`（RGB） 与 `data/test/testimgr/`（IR）
+- 裁切后图像目录（用于训练/验证）：
+  - `data_croped/train/trainimg/`（RGB） 与 `data_croped/train/trainimgr/`（IR）
+  - `data_croped/val/valimg/`（RGB）   与 `data_croped/val/valimgr/`（IR）
+  - `data_croped/test/testimg/`（RGB） 与 `data_croped/test/testimgr/`（IR）
 - 标签目录：
-  - `data/<subset>/{subset}labels_yolo_obb/`（例如 `data/train/trainlabels_yolo_obb/`），与图像同名 `.txt`
+  - `data_<或>data_croped/<subset>/{subset}labels_yolo_obb/`（与图像同名 `.txt`）
 - 目录快照：
   - `data/` 内含 `classes.txt`、`mismatch_obb.txt` 与 `数据集预处理逻辑.md`
-  - 预处理脚本：`src/dataset_preprocess/preprocess_obb.py`、`verify_obb_preview.py`、`clean_mismatch.py`
-- 数据集预处理已完成√
+  - 预处理脚本：`src/dataset_preprocess/preprocess_obb.py`、`verify_obb_preview.py`、`clean_mismatch.py`、`crop_white_borders.py`
+- 数据集预处理（白边裁切）已完成；`crop_meta.json` 显示统一裁切为 `x100_y100_w640_h512`
 - **已保证此描述实际准确，无需怀疑**
 - **修改`ultralytics-8.2/`目录中源码的标签映射和数据集加载逻辑以适配约定--此项已完成**
 
-### 训练与验证
+### 训练与验证（更新）
 
  - **基线模型务必存放在 `models/baseline/` 目录中**
  - 快速验证脚本：`src/trainning/baseline_quick_train.py`（单轮次训练，`fraction=0.05`，`imgsz=832`，训练 `rect=False`，验证/测试 `rect=True`）
  - **FusionAttention 模型务必存放在 `models/fusion-attention/` 目录中**
  - 快速训练验证脚本：`src/trainning/fusion_attention_quick_train.py`（单轮次训练，`fraction=0.05`，`imgsz=832`，训练 `rect=False`，验证/测试 `rect=True`）
- - 正式训练脚本：`src/trainning/train_formal.py`（顶层宏统一管理超参；早停 `patience=10`；显式打印 `optimizer/lr0` 配置以便日志核对）**正式训练脚本可以指定模型配置文件和权重输入目录。**
- - 训练脚本支持通过参数/宏控制训练数据比例与数据输入策略，保持与本文档约定一致
+ - 正式训练脚本：`src/trainning/train_formal.py`（宏统一；`imgsz=640`，训练 `rect=False`；验证 `rect=True`；开启 `mosaic=1.0`）
+ - 数据集 YAML 已切换至裁切后目录：`src/cfg/datasets/dual_obb_dronevehicle.yaml` 的 `train/val/test` 指向 `data_croped/<subset>/<subset>img`
+ - 验证脚本统一为 `imgsz=640` 与 `rect=True`，保持 640×512 输入：`src/testing/test_general.py:51`
+
+**白边裁切与预览**
+
+ - 白边裁切工具：`src/dataset_preprocess/crop_white_borders.py`
+   - 命令（全量处理并写出）：`python src/dataset_preprocess/crop_white_borders.py --subset all --workers 8 --threshold 250`
+   - 输出：`data_croped/<subset>/<subset>img|imgr|labels_yolo_obb/`，统计 `data_croped/crop_meta.json`
+ - 预览裁切/非裁切数据与 OBB 标签：`src/dataset_preprocess/verify_obb_preview.py`（显示类名）
+   - 命令（裁切集预览）：`python src/dataset_preprocess/verify_obb_preview.py --data-root data_croped --subset test --start-index 0`
+   - 支持参数：`--data-root` 切换 `data/` 与 `data_croped/`；`--subset` 选择子集；`--start-index` 指定起始样本
 
 
 ## 常见问题与说明
@@ -211,6 +228,7 @@ YOLO-Fusion-UA-Lite/
 │  ├─ dataset_preprocess/
 │  │  ├─ preprocess_obb.py
 │  │  ├─ verify_obb_preview.py
+│  │  ├─ crop_white_borders.py
 │  │  └─ clean_mismatch.py
 │  └─ trainning/
 │     ├─ baseline_quick_train.py

@@ -212,3 +212,27 @@ python src/testing/test_general.py --device 0 \
 -   所有后续的开发工作都在一个独立的特性分支上进行，与主干完全隔离，可以安全地继续开发。
 
 如需查看具体实现，请按上述代码引用定位到文件与行号（`file_path:line_number`）
+### 2025-11-28 变更记录（白边裁切、mosaic 启用、验证预览增强）
+- 数据集白边裁切工具新增：`src/dataset_preprocess/crop_white_borders.py:1-405`
+  - 全量处理命令：`python src/dataset_preprocess/crop_white_borders.py --subset all --workers 8 --threshold 250`
+  - 输出目录：`data_croped/<subset>/<subset>img|imgr|labels_yolo_obb/`；统计：`data_croped/crop_meta.json`
+  - 裁切结果已统一为 `x100_y100_w640_h512`（来自 `crop_meta.json` 汇总），与后续验证输入 `640×512` 对齐
+- 数据集配置切换至裁切集：`src/cfg/datasets/dual_obb_dronevehicle.yaml:13-15` 指向 `data_croped/<subset>/<subset>img`
+- 正式训练脚本更新：`src/trainning/train_formal.py`
+  - 输入尺寸更新：`IMG_SIZE=640`（`src/trainning/train_formal.py:30`）
+  - 启用 Mosaic：`MOSAIC=1.0`（`src/trainning/train_formal.py:41`）
+  - 训练 `rect=False`；验证 `rect=True`（与默认验证策略保持一致）
+- 验证统一到 `640×512`：`src/testing/test_general.py:51` 将 `IMG_SIZE=640`
+- 预览脚本增强（显示类名、切换裁切/非裁切）：`src/dataset_preprocess/verify_obb_preview.py`
+  - 新增参数：`--data-root/--subset/--start-index`（`222-226`）
+  - 类名解析：优先 `data/classes.txt`，回退 YAML `names`（`84-120`）
+  - 可视化：绘制原标注（蓝）与 OBB 标签（绿），用于核验裁切后标签正确性
+
+原因与目标：
+- 启用 Mosaic 需要消除统一白边填充的干扰，因此先进行离线白边裁切；裁切后统一尺寸为 `640×512`，训练与验证均以 `imgsz=640` 配合 `rect=True/False` 使用
+- 预览脚本显示类名可提升人工检查效率，快速确认标签行与类别一致性
+
+使用建议：
+- 运行裁切后再训练：`python src/dataset_preprocess/crop_white_borders.py --subset all --workers 8`
+- 训练：`python src/trainning/train_formal.py`
+- 裁切集预览核验：`python src/dataset_preprocess/verify_obb_preview.py --data-root data_croped --subset test --start-index 0`

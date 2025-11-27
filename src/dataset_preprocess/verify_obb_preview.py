@@ -6,6 +6,9 @@ import math
 import cv2
 import numpy as np
 import xml.etree.ElementTree as ET
+from pathlib import Path
+import argparse
+import ast
 
 def find_subset_dirs(sub_root):
     imgs = []
@@ -51,23 +54,49 @@ def list_images(dirp):
     return sorted(xs)
 
 def read_classes_map(data_root):
-    p = os.path.join(data_root, "classes.txt")
+    """
+    读取类别映射：优先读取数据根目录下的 `classes.txt`（格式：`<id> <name>`），
+    若不存在或为空，则回退读取仓库数据集 YAML（`src/cfg/datasets/dual_obb_dronevehicle.yaml`）中的 names 列表。
+    """
     id2name = {}
-    if not os.path.isfile(p):
+    # 优先尝试 classes.txt
+    p = os.path.join(data_root, "classes.txt")
+    if os.path.isfile(p):
+        with open(p, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                parts = line.split()
+                if len(parts) < 2:
+                    continue
+                try:
+                    cid = int(parts[0])
+                except Exception:
+                    continue
+                id2name[cid] = parts[1]
+    if id2name:
         return id2name
-    with open(p, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split()
-            if len(parts) < 2:
-                continue
-            try:
-                cid = int(parts[0])
-            except Exception:
-                continue
-            id2name[cid] = parts[1]
+
+    # 回退：读取仓库 YAML 的 names 列表
+    try:
+        ROOT = Path(__file__).resolve().parents[2]
+        yaml_path = ROOT / "src" / "cfg" / "datasets" / "dual_obb_dronevehicle.yaml"
+        if yaml_path.is_file():
+            txt = yaml_path.read_text(encoding="utf-8")
+            # 简单解析：找到以 names: 开头的一行，尝试将右侧的 Python 风格列表解析为 list
+            for line in txt.splitlines():
+                if line.strip().startswith("names:"):
+                    # 形如：names: ["car", "truck", ...]
+                    data = line.split(":", 1)[1].strip()
+                    try:
+                        arr = ast.literal_eval(data)
+                    except Exception:
+                        arr = []
+                    if isinstance(arr, (list, tuple)):
+                        return {i: str(name) for i, name in enumerate(arr)}
+    except Exception:
+        pass
     return id2name
 
 def parse_xml_objs(xml_path):
@@ -212,12 +241,22 @@ def resize_pair_left_right(left, right):
     return np.concatenate([l2, r2], axis=1)
 
 def main():
-    data_root = os.path.join(os.path.dirname(__file__), "data")
-    subset = "train"
-    if len(sys.argv) > 1:
-        subset = sys.argv[1]
-    if os.path.isabs(subset):
-        sub_root = subset
+    """
+    交互预览入口：
+    - 新增参数选择数据根目录（支持原始 data/ 与裁切后 data_croped/）；
+    - 指定子集 train/val/test 与起始样本索引，便于快速核验裁切标签的正确性。
+    """
+    parser = argparse.ArgumentParser(description="DroneVehicle 双模态 OBB 标签与原始/裁切图像预览")
+    parser.add_argument("--data-root", type=str, default=str(Path(__file__).resolve().parents[2] / "data"), help="数据根目录：可选 data/ 或 data_croped/")
+    parser.add_argument("--subset", type=str, default="train", choices=["train", "val", "test"], help="子集选择：train/val/test")
+    parser.add_argument("--start-index", type=int, default=0, help="起始样本下标（默认 0）")
+    args = parser.parse_args()
+
+    data_root = args.data_root
+    subset = args.subset
+    # 兼容绝对路径传入：若 data_root 已包含子集层，则直接使用；否则在 data_root 下拼接 subset
+    if os.path.basename(data_root).lower() in ("train", "val", "test"):
+        sub_root = data_root
         data_root = os.path.dirname(sub_root)
     else:
         sub_root = os.path.join(data_root, subset)
@@ -250,7 +289,7 @@ def main():
     if not bases:
         print("未找到图像，检查子目录是否包含图像文件")
         return
-    i = 0
+    i = max(0, int(args.start_index)) % len(bases)
     cv2.namedWindow("preview", cv2.WINDOW_NORMAL)
     while True:
         base = bases[i]
@@ -280,6 +319,7 @@ def main():
             dets = parse_yolo_obb_from_zip(yolo_zip, base)
         rgb_vis = draw_original(rgb_img, rgb_objs, (255,0,0))
         ir_vis = draw_original(ir_img, ir_objs, (255,0,0))
+        # 使用 id2name 显示类名（优先 classes.txt，回退 YAML names）
         rgb_vis = draw_yolo_obb(rgb_vis, dets, id2name, (0,255,0))
         ir_vis = draw_yolo_obb(ir_vis, dets, id2name, (0,255,0))
         canvas = resize_pair_left_right(rgb_vis, ir_vis)

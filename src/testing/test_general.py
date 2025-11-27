@@ -48,7 +48,7 @@ WEIGHTS_DIR = ROOT / "models/formal/dualbackbone-FA-Concat-obb"  # 训练输出�
 DEFAULT_RESULT_DIR = ROOT / "result"  # 默认评估输出根目录
 DEFAULT_RUN_NAME = "dualbackbone-FA-Concat-100epoch"  # 默认评估结果文件名（不含扩展名）
 
-IMG_SIZE = 832  # 按项目约定
+IMG_SIZE = 640  # 使用裁切后统一分辨率宽度，配合 rect=True 保持 640x512 形状
 BATCH = 12  # 可根据显存/CPU性能调整
 CONF_THRES = 0.25  # 使用官方默认阈值提高模型测试表现效果
 IOU_THRES = 0.5
