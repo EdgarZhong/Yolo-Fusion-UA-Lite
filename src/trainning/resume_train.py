@@ -24,7 +24,7 @@ from ultralytics.models.yolo.obb import OBBTrainer  # noqa: E402
 
 def default_resume_path() -> Path:
     """返回默认的 last.pt 路径，如果不存在则返回运行目录路径用于框架内部查找。"""
-    run_dir = ROOT / "models" / "formal" / "fusion-attention" / "dualbackbone-fusionattention-obb"
+    run_dir = ROOT / "models" / "formal" / "dualbackbone-FA-Concat-obb"
     last_pt = run_dir / "weights" / "last.pt"
     return last_pt if last_pt.exists() else run_dir
 
@@ -62,7 +62,6 @@ def main():
 
     # 强制开启验证和绘图，确保 Loss 被计算和记录
     overrides["val"] = True
-    overrides["plots"] = True
     overrides["save"] = True
 
     if args.imgsz is not None:

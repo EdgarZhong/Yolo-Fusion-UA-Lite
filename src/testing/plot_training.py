@@ -23,6 +23,7 @@ from matplotlib import font_manager
 MODEL_DIRS: List[str] = [
     "formal/fusion-attention/dualbackbone-fusionattention-obb",
     "formal/dualbackbone-easy-obb-formal6",
+    "formal/dualbackbone-FA-Concat-obb"
     # 可追加其他目录，例如："formal/baseline/dualbackbone-obb"
 ]
 

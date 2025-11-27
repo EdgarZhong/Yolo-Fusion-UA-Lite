@@ -1,0 +1,74 @@
+# 双主干改进融合 OBB 模型配置（FA‑Concat：特征增强 + 通道拼接）
+# 说明：
+# - 基于 `dualbackbone_easy_obb.yaml`，仅将颈部三处的纯 Concat 替换为新模块 `FeatureAttentionConcat`；
+# - `FeatureAttentionConcat` 会对两路模态各自进行 Inception + SE 特征增强，然后沿通道维拼接；
+# - 输出形态与纯 Concat 保持一致（通道为两路之和），因此后续 `C2f` 与 OBB 头的配置不变。
+
+# 类别数（与数据集一致）
+nc: 5
+
+# 输入通道固定为 6（RGB+IR）
+ch: 6
+
+# 复用官方的尺度表（depth, width, max_channels）以兼容不同模型规模的自动缩放
+scales:
+  n: [0.33, 0.25, 1024]
+  s: [0.33, 0.50, 1024]
+  m: [0.67, 0.75, 768]
+  l: [1.00, 1.00, 512]
+  x: [1.00, 1.25, 512]
+
+# 双主干（Backbone）
+backbone:
+  # 0: 恒等输入，占位并明确分支起点
+  - [-1, 1, IdentityInput, []]
+  # 1: 从恒等输入选择 RGB（三通道）
+  - [-1, 1, ModalitySelector, [1]]
+  # 2: 从恒等输入选择 IR（三通道）
+  #    注意：此处使用 -2 以确保选择同一上游输入（而非上一层的输出），配合解析器的负索引行为达到复用输入的效果。
+  - [-2, 1, ModalitySelector, [2]]
+
+  # ===== RGB 分支（从 1 开始） =====
+  - [1, 1, Conv, [64, 3, 2]]
+  - [-1, 1, Conv, [128, 3, 2]]
+  - [-1, 3, C2f, [128, True]]
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [-1, 6, C2f, [256, True]]  # RGB-P3
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [-1, 6, C2f, [512, True]]  # RGB-P4
+  - [-1, 1, Conv, [1024, 3, 2]]
+  - [-1, 3, C2f, [1024, True]]
+  - [-1, 1, SPPF, [1024, 5]]    # RGB-P5
+
+  # ===== IR 分支（从 2 开始） =====
+  - [2, 1, Conv, [64, 3, 2]]
+  - [-1, 1, Conv, [128, 3, 2]]
+  - [-1, 3, C2f, [128, True]]
+  - [-1, 1, Conv, [256, 3, 2]]
+  - [-1, 6, C2f, [256, True]]  # IR-P3
+  - [-1, 1, Conv, [512, 3, 2]]
+  - [-1, 6, C2f, [512, True]]  # IR-P4
+  - [-1, 1, Conv, [1024, 3, 2]]
+  - [-1, 3, C2f, [1024, True]]
+  - [-1, 1, SPPF, [1024, 5]]    # IR-P5
+
+# 颈部与头部（Head）：各尺度 FA‑Concat 融合 + OBB 输出
+# 索引说明：截至上方主干，层索引依次为 0..22，其中：
+# - RGB-P3: 7，RGB-P4: 9，RGB-P5: 12
+# - IR-P3: 17，IR-P4: 19，IR-P5: 22
+head:
+  # 融合 P3（FeatureAttentionConcat 替换纯 Concat）
+  - [[7, 17], 1, FeatureAttentionConcat, []]
+  - [-1, 3, C2f, [256]]       # 24: h_p3
+
+  # 融合 P4
+  - [[9, 19], 1, FeatureAttentionConcat, []]
+  - [-1, 3, C2f, [512]]       # 26: h_p4
+
+  # 融合 P5
+  - [[12, 22], 1, FeatureAttentionConcat, []]
+  - [-1, 3, C2f, [1024]]      # 28: h_p5
+
+  # 三尺度 OBB 检测头
+  - [[24, 26, 28], 1, OBB, [nc, 1]]
+

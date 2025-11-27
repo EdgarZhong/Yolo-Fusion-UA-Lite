@@ -1,5 +1,22 @@
 
 ## 阶段二工作记录（FusionAttention模块，双主干模型）
+
+### 2025-11-26 变更记录（FA‑Concat 改进与快速验证）
+- 新增改进模块：`FeatureAttentionConcat`，避免逐元素相加造成的不可逆信息丢失，采用 Inception+SE 逐模态增强后通道拼接（输出通道为单模态两倍）。
+  - 位置：`ultralytics-8.2/ultralytics/nn/modules/fusion.py:65-102`
+  - 模块导出注册：`ultralytics-8.2/ultralytics/nn/modules/__init__.py:87-160`
+- 新增模型配置：`src/cfg/model/dualbackbone_FA-Concat.yaml`
+  - 基于 `dualbackbone_easy_obb.yaml`，仅将 P3/P4/P5 三处纯 `Concat` 替换为 `FeatureAttentionConcat`，其余保持不变。
+- 更新快速训练脚本：`src/trainning/fusion_attention_quick_train.py:12-55`
+  - 切换模型配置到 `dualbackbone_FA-Concat.yaml`，实验名称更新为 `dualbackbone-FA-Concat-obb-quick`。
+- 训练稳定性保障：仍可使用 `src/trainning/watchdog_resume.py` 在正式训练时监控与自动重启，避免意外中断。
+- 可视化脚本重构：`src/testing/plot_single_model_metrics.py`、`src/testing/plot_training.py` 已修复并优化，用于后续对比 FA 与 FA‑Concat 的指标表现。
+
+原因与设计说明：
+- 现有 FA 在末端使用逐元素相加（add）将两路模态融合，导致某些细节信息被抑制或抵消，召回率受限；
+- FA‑Concat 不做融合，仅做特征增强后拼接，保持两路信息完整可逆，输出形态与基线纯 Concat 一致，便于快速替换与对比；
+- 三个尺度（P3/P4/P5）均同步替换，后续 `C2f` 与 OBB 头无需改动，训练脚本与验证流程保持一致。
+
 ### 2025-11-25 变更记录（进入阶段二，实现FusionAttention模块并替换简单拼接）
 - 实现 FusionAttention 模块，替换简单拼接。
   - 位置：`ultralytics-8.2/ultralytics/nn/modules/fusion.py:1-100`

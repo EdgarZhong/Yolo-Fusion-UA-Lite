@@ -30,7 +30,10 @@ models/formal/**
 # 保留 formal/dualbackbone-easy-obb-formal6 模型权重存放目录及其所有内容
 !models/formal/dualbackbone-easy-obb-formal6/
 !models/formal/dualbackbone-easy-obb-formal6/**
-# 保留 formal/fusion-attention/dualbackbone-fusionattention-obb 模型权重存放目录（该模型正在训练中）
+# 保留 formal/fusion-attention/dualbackbone-fusionattention-obb 模型权重存放目模型训练129轮，效果不佳
 !models/formal/fusion-attention/
 !models/formal/fusion-attention/dualbackbone-fusionattention-obb/
 !models/formal/fusion-attention/dualbackbone-fusionattention-obb/**
+# 保留 formal/dualbackbone-FA-Concat-obb 模型权重存放目录及其所有内容（该模型正在训练中）
+!models/formal/dualbackbone-FA-Concat-obb/
+!models/formal/dualbackbone-FA-Concat-obb/**

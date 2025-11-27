@@ -35,6 +35,7 @@ from ultralytics.nn.modules import (
     IdentityInput,
     ModalitySelector,
     FusionAttention,
+    FeatureAttentionConcat,
     Classify,
     Concat,
     Conv,
@@ -1092,6 +1093,13 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             c2 = ch[f[0]]
             if not args:
                 args = [c2]
+        elif m is FeatureAttentionConcat:
+            # FA‑Concat：两路输入通道必须一致；输出通道为两路之和；构造参数传入单路通道数
+            assert isinstance(f, (list, tuple)) and len(f) == 2
+            assert ch[f[0]] == ch[f[1]], "FeatureAttentionConcat 两路输入通道必须一致"
+            c2 = ch[f[0]] + ch[f[1]]
+            if not args:
+                args = [ch[f[0]]]
         elif m in {Detect, WorldDetect, Segment, Pose, OBB, ImagePoolingAttn, v10Detect}:
             args.append([ch[x] for x in f])
             if m is Segment:

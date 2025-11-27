@@ -60,3 +60,43 @@ class FusionAttention(nn.Module):
         fr = self.se_rgb(self.inc_rgb(x_rgb))
         fi = self.se_ir(self.inc_ir(x_ir))
         return (fr + fi).contiguous()
+
+
+class FeatureAttentionConcat(nn.Module):
+    """改进版特征注意力拼接模块（FA-Concat）
+
+    设计目标：
+    - 仅做特征增强与去噪：分别对 RGB 与 IR 进行 Inception 多分支特征提取与 SE 通道注意力加权；
+    - 不做融合（不逐元素相加）：避免信息的不可逆丢失；
+    - 最终输出沿通道维进行拼接（concat），通道数为单模态的 2 倍；
+    - 从输入/输出形态上与基线中的纯 Concat 保持一致，方便替换与对比。
+    """
+
+    def __init__(self, c1: int):
+        """构造函数
+
+        参数：
+        - c1：单模态输入通道数（必须可被 4 整除，约束由 Inception 内部断言保证）
+        """
+        super().__init__()
+        # 两路模态共享相同的增强结构：Inception + SE
+        self.inc_rgb = Inception(c1)
+        self.inc_ir = Inception(c1)
+        self.se_rgb = SEBlock(c1)
+        self.se_ir = SEBlock(c1)
+
+    def forward(self, x: list[torch.Tensor] | tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
+        """前向计算
+
+        输入：
+        - x：包含两路模态特征的列表或元组 (x_rgb, x_ir)，形状均为 [B, C, H, W]
+
+        输出：
+        - 沿通道维拼接后的张量，形状为 [B, 2*C, H, W]
+        """
+        x_rgb, x_ir = x
+        # 对两路模态各自进行特征增强与噪声抑制
+        fr = self.se_rgb(self.inc_rgb(x_rgb))  # 增强后的 RGB 特征
+        fi = self.se_ir(self.inc_ir(x_ir))    # 增强后的 IR 特征
+        # 不做加法融合，直接沿通道拼接，保持信息可逆与完整
+        return torch.cat([fr, fi], dim=1).contiguous()

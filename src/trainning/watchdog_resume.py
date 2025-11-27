@@ -27,18 +27,16 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def default_resume_path() -> Path:
-    """返回默认的 last.pt 路径，如果不存在则返回运行目录路径用于框架内部查找。"""
-    run_dir = ROOT / "models" / "formal" / "fusion-attention" / "dualbackbone-fusionattention-obb"
-    last_pt = run_dir / "weights" / "last.pt"
-    return last_pt if last_pt.exists() else run_dir
+# def default_resume_path() -> Path:
+#     """返回默认的 last.pt 路径，如果不存在则返回运行目录路径用于框架内部查找。"""
+#     run_dir = ROOT / "models" / "formal" / "fusion-attention" / "dualbackbone-fusionattention-obb"
+#     last_pt = run_dir / "weights" / "last.pt"
+#     return last_pt if last_pt.exists() else run_dir
 
 
 def build_command(args: argparse.Namespace) -> list[str]:
     """构建调用 resume_train.py 的命令参数列表。"""
     cmd = [sys.executable, str(ROOT / "src" / "trainning" / "resume_train.py")]
-    if args.resume:
-        cmd += ["--resume", args.resume]
     if args.imgsz is not None:
         cmd += ["--imgsz", str(args.imgsz)]
     if args.batch is not None:
@@ -51,17 +49,17 @@ def build_command(args: argparse.Namespace) -> list[str]:
 def main():
     """启动看门狗，监控训练进程并在异常退出时自动重启。"""
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--resume",
-        type=str,
-        default=str(default_resume_path()),
-        help="断点路径：可传运行目录或具体 last.pt 文件；默认为上次正式训练目录",
-    )
+    # parser.add_argument(
+    #     "--resume",
+    #     type=str,
+    #     default=str(default_resume_path()),
+    #     help="断点路径：可传运行目录或具体 last.pt 文件；默认为上次正式训练目录",
+    # )
     parser.add_argument("--imgsz", type=int, default=None, help="可选覆盖：输入尺寸")
     parser.add_argument("--batch", type=int, default=None, help="可选覆盖：批大小")
     parser.add_argument("--device", type=str, default=None, help="可选覆盖：设备，如 '0'、'0,1' 或 'cpu'")
-    parser.add_argument("--max-retries", type=int, default=10, help="最大重启次数，达到上限后停止")
-    parser.add_argument("--cooldown", type=int, default=60, help="重启前的冷却秒数")
+    parser.add_argument("--max-retries", type=int, default=100, help="最大重启次数，达到上限后停止")
+    parser.add_argument("--cooldown", type=int, default=5, help="重启前的冷却秒数")
     parser.add_argument("--no-launch-blocking", action="store_true", help="关闭 CUDA_LAUNCH_BLOCKING=1")
     args = parser.parse_args()
 
