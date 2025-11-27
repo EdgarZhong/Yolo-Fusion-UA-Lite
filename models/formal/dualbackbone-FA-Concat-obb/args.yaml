@@ -1,7 +1,7 @@
 task: obb
 mode: train
-model: E:\Storge\Yolo-Fusion-UA-Lite\models\formal\dualbackbone-FA-Concat-obb\weights\last.pt
-data: E:/Storge/Yolo-Fusion-UA-Lite/src/cfg/datasets/dual_obb_dronevehicle.yaml
+model: D:\Code\DeepLearning\YOLO-Fusion-UA-Lite\models\formal\dualbackbone-FA-Concat-obb\weights\last.pt
+data: D:/Code/DeepLearning/YOLO-Fusion-UA-Lite/src/cfg/datasets/dual_obb_dronevehicle.yaml
 epochs: 150
 time: null
 patience: 15

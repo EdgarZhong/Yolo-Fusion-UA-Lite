@@ -78,10 +78,11 @@
 本阶段旨在解决当前架构缺失 FPN/PANet 以及缺乏跨模态动态感知的问题。
 
 **迭代 v2.0: "The Completed Body" (架构补全版)**
-*   **目标：** 解决当前模型最大的结构短板——缺失 Neck (FPN/PANet)。打通 P3/P4/P5 之间的特征流动，大幅提升 Precision 和 mAP。
+*   **目标：** 解决当前模型最大的结构短板——缺失 Neck (FPN/PANet)。打通 P3/P4/P5 之间的特征流动，旨在提升 Precision 和 mAP。
 *   **方案：** 在 FA-Concat 融合层之后，接入一个标准的 **YOLOv8 FPN + PANet** 结构。
 *   **预期：** 小目标 Recall 和整体定位精度显著提升。
-*   **实施指南：** 详见 `Neck_Construction_Guide.md`。
+*   **实施指南：** 详见 `Neck_Construction_Guide.md`
+*   模型正在训练中
 
 **迭代 v2.1: "Cross-Modal Perception" (跨模态感知版)**
 *   **目标：** 解决“不确定性感知”问题。

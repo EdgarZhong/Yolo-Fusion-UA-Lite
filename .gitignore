@@ -37,3 +37,6 @@ models/formal/**
 # 保留 formal/dualbackbone-FA-Concat-obb 模型权重存放目录及其所有内容（该模型正在训练中）
 !models/formal/dualbackbone-FA-Concat-obb/
 !models/formal/dualbackbone-FA-Concat-obb/**
+# 保留 formal/FA-Concat-FPN-PAN-neck 模型权重存放目录及其所有内容（该模型正在训练中）
+!models/formal/FA-Concat-FPN-PAN-neck/
+!models/formal/FA-Concat-FPN-PAN-neck/**

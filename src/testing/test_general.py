@@ -46,7 +46,7 @@ from ultralytics.utils.torch_utils import select_device  # noqa: E402
 DATA_CFG = ROOT / "src/cfg/datasets/dual_obb_dronevehicle.yaml"  # 数据集 YAML（绝对路径）
 WEIGHTS_DIR = ROOT / "models/formal/dualbackbone-FA-Concat-obb"  # 训练输出目录
 DEFAULT_RESULT_DIR = ROOT / "result"  # 默认评估输出根目录
-DEFAULT_RUN_NAME = "dualbackbone-FA-Concat-78epoch"  # 默认评估结果文件名（不含扩展名）
+DEFAULT_RUN_NAME = "dualbackbone-FA-Concat-100epoch"  # 默认评估结果文件名（不含扩展名）
 
 IMG_SIZE = 832  # 按项目约定
 BATCH = 12  # 可根据显存/CPU性能调整

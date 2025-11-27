@@ -10,7 +10,7 @@
 - 基本用法（默认从上次正式训练目录恢复）：
   `python src/trainning/watchdog_resume.py`
 - 自定义断点与覆盖：
-  `python src/trainning/watchdog_resume.py --resume D:\Code\DeepLearning\YOLO-Fusion-UA-Lite\models\formal\fusion-attention\dualbackbone-fusionattention-obb\weights\last.pt --imgsz 832 --batch 12 --device 0`
+13→  `python src/trainning/watchdog_resume.py --resume models/formal/fusion-attention/dualbackbone-fusionattention-obb/weights/last.pt --imgsz 832 --batch 12 --device 0`
 - 控制重试：
   `python src/trainning/watchdog_resume.py --max-retries 10 --cooldown 60 --backoff 1.5`
 """
@@ -97,4 +97,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

@@ -18,12 +18,12 @@ import sys
 
 # =============== 宏定义区域（可根据需要修改） ===============
 # 模型与数据配置路径（相对仓库根目录）
-MODEL_CFG = "src/cfg/model/dualbackbone_FA-Concat.yaml"
+MODEL_CFG = "src/cfg/model/FA_Concat_FPN-PAN_neck.yaml"
 DATA_CFG = "src/cfg/datasets/dual_obb_dronevehicle.yaml"
 
 # 训练超参数
 EPOCHS = 150          # 建议：100 ~ 300。对于基线实验，100轮足以观察收敛趋势和性能。
-BATCH = 8             # 建议：根据显存最大化。如果显存允许（如24G），尝试16或32以稳定梯度。8是安全起步值。
+BATCH = 10             # 建议：根据显存最大化。如果显存允许（如24G），尝试16或32以稳定梯度。8是安全起步值。
 WORKERS = 2           # 建议：根据CPU核数。通常设为4或8能保证数据加载不成为瓶颈。
 DEVICE = 0            # GPU0，保持不变
 FRACTION = 1.0        # 正式训练必须为 1.0 (使用全量数据)
@@ -54,7 +54,7 @@ SHEAR = 0.0
 
 # 输出目录与实验名
 PROJECT_DIR = "models/formal"
-RUN_NAME = "dualbackbone-FA-Concat-obb"
+RUN_NAME = "FA-Concat-FPN-PAN-neck"
 
 # ==========================================================
 
