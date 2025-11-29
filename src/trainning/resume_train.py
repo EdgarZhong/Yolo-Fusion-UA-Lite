@@ -24,7 +24,7 @@ from ultralytics.models.yolo.obb import OBBTrainer  # noqa: E402
 
 def default_resume_path() -> Path:
     """返回默认的 last.pt 路径，如果不存在则返回运行目录路径用于框架内部查找。"""
-    run_dir = ROOT / "models" / "formal" / "FA-Concat-FPN-PAN-neck"
+    run_dir = ROOT / "models" / "formal" / "CM-FA-Concat-FPN-PAN-neck"
     last_pt = run_dir / "weights" / "last.pt"
     return last_pt if last_pt.exists() else run_dir
 

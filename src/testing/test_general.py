@@ -44,14 +44,14 @@ from ultralytics.utils.torch_utils import select_device  # noqa: E402
 
 # ===================== 路径与常量约定 =====================
 DATA_CFG = ROOT / "src/cfg/datasets/dual_obb_dronevehicle.yaml"  # 数据集 YAML（绝对路径）
-WEIGHTS_DIR = ROOT / "models/formal/dualbackbone-FA-Concat-obb"  # 训练输出目录
+WEIGHTS_DIR = ROOT / "models/formal/FA-Concat-FPN-PAN-neck"  # 训练输出目录
 DEFAULT_RESULT_DIR = ROOT / "result"  # 默认评估输出根目录
-DEFAULT_RUN_NAME = "dualbackbone-FA-Concat-100epoch"  # 默认评估结果文件名（不含扩展名）
+DEFAULT_RUN_NAME = "FA-Concat-FPN-PAN-neck-100epoch-conf0.01-aug-iou0.75"  # 默认评估结果文件名（不含扩展名）
 
 IMG_SIZE = 640  # 使用裁切后统一分辨率宽度，配合 rect=True 保持 640x512 形状
 BATCH = 12  # 可根据显存/CPU性能调整
-CONF_THRES = 0.25  # 使用官方默认阈值提高模型测试表现效果
-IOU_THRES = 0.5
+CONF_THRES = 0.01  # 使用官方默认阈值提高模型测试表现效果
+IOU_THRES = 0.75
 MAX_DET = 300
 
 
@@ -78,6 +78,8 @@ def run_eval(
     result_dir: Path | None = None,
     run_name: str | None = None,
     test_ratio: float = 1.0,
+    test_aug: bool = True,
+    iou: float = IOU_THRES,
 ) -> Path:
     """
     运行 OBB 验证流程（split=test），保存评估指标到 指定目录（默认 result/）
@@ -105,7 +107,8 @@ def run_eval(
         plots=False,
         save_json=True,
         conf=CONF_THRES,
-        iou=IOU_THRES,
+        iou=float(iou),
+        augment=bool(test_aug),
         max_det=MAX_DET,
         project=str(result_root),
         name=name,
@@ -205,6 +208,8 @@ def main() -> None:
     parser.add_argument("--model-name", type=str, default=DEFAULT_RUN_NAME, help="模型名称（用于结果文件命名）")
     parser.add_argument("--result-dir", type=str, default=str(DEFAULT_RESULT_DIR), help="结果输出目录")
     parser.add_argument("--test-ratio", type=float, default=1.0, help="测试集比例 (0-1]，默认 1.0 全量")
+    parser.add_argument("--test-aug", action="store_true", help="启用测试时增强（多尺度/翻转等）")
+    parser.add_argument("--iou", type=float, default=IOU_THRES, help="NMS 的 IOU 阈值，默认 0.75 提升召回")
     args_ns = parser.parse_args()
 
     weights_input = Path(args_ns.weights) if args_ns.weights else _find_weights(WEIGHTS_DIR)
@@ -217,6 +222,8 @@ def main() -> None:
         result_dir=Path(args_ns.result_dir),
         run_name=args_ns.model_name,
         test_ratio=float(args_ns.test_ratio),
+        test_aug=bool(args_ns.test_aug),
+        iou=float(args_ns.iou),
     )
 
 

@@ -13,6 +13,16 @@ from pathlib import Path
 import sys
 from typing import Dict, List, Optional
 import math  # 确保 math 被导入
+import time
+import argparse
+import threading
+from concurrent.futures import ThreadPoolExecutor
+try:
+    from watchdog.observers import Observer
+    from watchdog.events import FileSystemEventHandler
+    WATCHDOG_AVAILABLE = True
+except Exception:
+    WATCHDOG_AVAILABLE = False
 
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
@@ -23,7 +33,9 @@ from matplotlib import font_manager
 MODEL_DIRS: List[str] = [
     "formal/fusion-attention/dualbackbone-fusionattention-obb",
     "formal/dualbackbone-easy-obb-formal6",
-    "formal/dualbackbone-FA-Concat-obb"
+    "formal/dualbackbone-FA-Concat-obb",
+    "formal/FA-Concat-FPN-PAN-neck",
+    "formal/CM-FA-Concat-FPN-PAN-neck",
     # 可追加其他目录，例如："formal/baseline/dualbackbone-obb"
 ]
 
@@ -162,17 +174,15 @@ def _plot_series(ax: plt.Axes, x: List[float], y: List[float], label: str, color
     ax.grid(True, linestyle="--", alpha=0.3)
 
 
-def main() -> None:
+def _collect_series() -> tuple[Dict[str, Dict[str, List[float]]], Dict[str, List[float]], float]:
     """
-    主入口：加载各模型的 results.csv 并绘制折线图。
+    读取各模型 results.csv，返回：
+    - series_by_model: 每模型的列数据字典
+    - x_by_model: 每模型的 X 轴（epoch 或行号）
+    - global_max_epoch: 全局最大 epoch
     """
-    _setup_cn_font()
-
-    # 1. 读取数据
     series_by_model: Dict[str, Dict[str, List[float]]] = {}
     x_by_model: Dict[str, List[float]] = {}
-    
-    # 预检：计算最大 Epoch，用于统一横轴
     global_max_epoch = 0.0
 
     for rel_dir in MODEL_DIRS:
@@ -180,25 +190,44 @@ def main() -> None:
         if not csv_path.exists():
             print(f"警告：未找到 {csv_path.as_posix()}，跳过")
             continue
-        
+
         cols = _read_results_csv(csv_path)
         series_by_model[rel_dir] = cols
-        
+
         # 确定 X 轴数据
         if "epoch" in cols and len(cols["epoch"]) > 0:
             x_by_model[rel_dir] = cols["epoch"]
         else:
             x_by_model[rel_dir] = list(range(len(next(iter(cols.values()), []))))
-            
+
         # 更新全局最大 Epoch
         if x_by_model[rel_dir]:
             try:
                 curr_max = float(x_by_model[rel_dir][-1])
                 if curr_max > global_max_epoch:
                     global_max_epoch = curr_max
-            except:
+            except Exception:
                 pass
 
+    return series_by_model, x_by_model, global_max_epoch
+
+
+def main() -> None:
+    """
+    主入口：加载各模型的 results.csv 并绘制折线图。
+    """
+    _setup_cn_font()
+
+    # 命令行参数：支持 --watch 持续刷新
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--watch", action="store_true", help="使用 watchdog 事件驱动监控 CSV 变化并自动刷新绘图")
+    parser.add_argument("--debounce-ms", type=int, default=800, help="文件变动防抖时间窗口（毫秒），默认 800ms")
+    parser.add_argument("--tick-ms", type=int, default=20000, help="UI 定时器周期（毫秒），默认 200ms")
+    parser.add_argument("--no-window", action="store_true", help="watch 模式禁用交互窗口，改为静态图片刷新并保存到 result/")
+    args = parser.parse_args()
+
+    # 初次绘制
+    series_by_model, x_by_model, global_max_epoch = _collect_series()
     if not series_by_model:
         print("未成功加载任何 results.csv，结束")
         return
@@ -209,50 +238,79 @@ def main() -> None:
     
     # 适当增加高度以容纳更多行
     fig, axes = plt.subplots(rows_layout, cols_layout, figsize=(15, 3.5 * rows_layout), squeeze=False)
+    # 非 watch 模式或需要交互窗口时才启用交互；watch+no-window 下不创建交互事件循环
+    if not args.watch or (args.watch and not args.no_window):
+        plt.ion()
 
     legend_handles = []
     legend_labels = []
     seen_labels = set()
 
-    # 3. 逐个指标绘图
-    for idx, key in enumerate(PLOT_KEYS):
-        r = idx // cols_layout
-        c = idx % cols_layout
-        ax = axes[r][c]
-        
-        ax.set_title(key, fontsize=11, fontweight='bold')
-        ax.set_xlabel("Epoch", fontsize=9)
-        ax.set_ylabel("Value", fontsize=9)
-        
-        # 遍历所有模型
-        for idx_model, rel_dir in enumerate(MODEL_DIRS):
-            if rel_dir not in series_by_model:
-                continue
-            
-            series = series_by_model[rel_dir]
-            color = _get_model_color(rel_dir, idx_model)
-            xs = x_by_model[rel_dir]
-            ys = series.get(key, [])
-            
-            if not ys:
-                continue
-                
-            _plot_series(ax, xs, ys, label=rel_dir, color=color)
+    # 3. 逐个指标绘图（封装为函数，便于刷新）
+    def draw_all(series_by_model: Dict[str, Dict[str, List[float]]], x_by_model: Dict[str, List[float]], global_max_epoch: float):
+        # 清空旧图线
+        for ax_row in axes:
+            for ax in ax_row:
+                ax.clear()
 
-            # 收集图例信息（只收集一次）
-            if rel_dir not in seen_labels:
-                # 获取刚刚画的那条线
-                lines = ax.get_lines()
-                if lines:
-                    # 查找对应颜色的线句柄
-                    line = lines[-1] 
-                    legend_handles.append(line)
-                    legend_labels.append(rel_dir)
-                    seen_labels.add(rel_dir)
+        nonlocal legend_handles, legend_labels, seen_labels
+        legend_handles = []
+        legend_labels = []
+        seen_labels = set()
 
-        # 统一横轴范围
-        if global_max_epoch > 0:
-            ax.set_xlim(0, global_max_epoch)
+        for idx, key in enumerate(PLOT_KEYS):
+            r = idx // cols_layout
+            c = idx % cols_layout
+            ax = axes[r][c]
+
+            ax.set_title(key, fontsize=11, fontweight='bold')
+            ax.set_xlabel("Epoch", fontsize=9)
+            ax.set_ylabel("Value", fontsize=9)
+
+            # 遍历所有模型
+            for idx_model, rel_dir in enumerate(MODEL_DIRS):
+                if rel_dir not in series_by_model:
+                    continue
+
+                series = series_by_model[rel_dir]
+                color = _get_model_color(rel_dir, idx_model)
+                xs = x_by_model[rel_dir]
+                ys = series.get(key, [])
+
+                if not ys:
+                    continue
+
+                _plot_series(ax, xs, ys, label=rel_dir, color=color)
+
+                # 收集图例信息（只收集一次）
+                if rel_dir not in seen_labels:
+                    lines = ax.get_lines()
+                    if lines:
+                        line = lines[-1]
+                        legend_handles.append(line)
+                        legend_labels.append(rel_dir)
+                        seen_labels.add(rel_dir)
+
+            # 统一横轴范围
+            if global_max_epoch > 0:
+                ax.set_xlim(0, global_max_epoch)
+
+        # 重新添加图例与布局
+        if legend_handles:
+            fig.legend(
+                legend_handles,
+                legend_labels,
+                loc="lower center",
+                bbox_to_anchor=(0.5, 0.92),
+                ncol=min(3, len(legend_labels)),
+                frameon=True,
+                fontsize=10,
+                borderaxespad=0.0,
+            )
+        plt.tight_layout(rect=[0, 0, 1, 0.90])
+        plt.subplots_adjust(hspace=0.4, wspace=0.2)
+        fig.canvas.draw()
+        plt.pause(0.01)
 
     # 4. 隐藏多余的子图位置
     total_subplots = rows_layout * cols_layout
@@ -263,34 +321,361 @@ def main() -> None:
 
     # ================= 核心修改区域 =================
     
-    # 5. 添加全局图例
-    # loc="lower center" + bbox_to_anchor=(0.5, 0.92) 
-    # 意思是：图例框的“底部中心”锚定在整个图表高度的 92% 处
-    # 这样图例会显示在 92% 以上的区域
-    if legend_handles:
-        fig.legend(
-            legend_handles,
-            legend_labels,
-            loc="lower center", 
-            bbox_to_anchor=(0.5, 0.92), 
-            ncol=min(3, len(legend_labels)),
-            frameon=True,
-            fontsize=10,
-            borderaxespad=0.
-        )
+    # 首次绘制
+    draw_all(series_by_model, x_by_model, global_max_epoch)
+    # 仅在需要交互窗口时做非阻塞展示；静态模式无需弹窗
+    if not args.watch or (args.watch and not args.no_window):
+        plt.show(block=False)
 
     # 6. 调整布局
     # rect=[left, bottom, right, top]
     # top=0.90 表示所有子图只能画在画布高度的 0% 到 90% 之间
     # 留出顶部的 10% (0.90~1.00) 给图例，避免遮挡
-    plt.tight_layout(rect=[0, 0, 1, 0.90])
-    
-    # 增加子图之间的间距
-    plt.subplots_adjust(hspace=0.4, wspace=0.2)
-    
-    # ===============================================
+    # 若启用监控，使用 watchdog 事件驱动 + 防抖 + 异步刷新
+    if args.watch:
+        if not WATCHDOG_AVAILABLE:
+            print("错误：未检测到 watchdog 库。请先安装：pip install watchdog")
+            return
 
-    plt.show()
+        debounce_ms = max(100, int(args.debounce_ms))
+        tick_ms = args.tick_ms
+
+        class _DebounceAggregator:
+            """文件变动防抖聚合器：记录各目录最近一次事件时间戳，超过窗口才认为就绪"""
+            def __init__(self):
+                self._lock = threading.Lock()
+                self._last_ts: Dict[str, float] = {}
+
+            def mark_changed(self, rel_dir: str) -> None:
+                now = time.time()
+                with self._lock:
+                    self._last_ts[rel_dir] = now
+
+            def pop_ready(self, window_ms: int) -> List[str]:
+                now = time.time()
+                ready: List[str] = []
+                with self._lock:
+                    for d, ts in list(self._last_ts.items()):
+                        if (now - ts) * 1000.0 >= window_ms:
+                            ready.append(d)
+                            del self._last_ts[d]
+                return ready
+
+        aggregator = _DebounceAggregator()
+
+        class _ResultsCsvHandler(FileSystemEventHandler):
+            """仅监听 models/<rel_dir>/results.csv 的创建/修改事件，并触发聚合器标记"""
+            def __init__(self, root: Path, rel_dirs: List[str], on_change):
+                super().__init__()
+                self.root = root
+                self.base = (self.root / "models").resolve()
+                self.rel_set = set(rel_dirs)
+                self.on_change = on_change
+
+            def _match_rel(self, src_path: str) -> Optional[str]:
+                try:
+                    p = Path(src_path).resolve()
+                    if p.name != "results.csv":
+                        return None
+                    rel = p.parent.resolve().relative_to(self.base)
+                    rel_str = str(rel).replace("\\", "/")
+                    return rel_str if rel_str in self.rel_set else None
+                except Exception:
+                    return None
+
+            def on_created(self, event):
+                if getattr(event, "is_directory", False):
+                    return
+                rel_dir = self._match_rel(getattr(event, "src_path", ""))
+                if rel_dir:
+                    aggregator.mark_changed(rel_dir)
+
+            def on_modified(self, event):
+                if getattr(event, "is_directory", False):
+                    return
+                rel_dir = self._match_rel(getattr(event, "src_path", ""))
+                if rel_dir:
+                    aggregator.mark_changed(rel_dir)
+
+        # 创建并启动文件系统观察者
+        observer = Observer()
+        handler = _ResultsCsvHandler(ROOT, MODEL_DIRS, aggregator.mark_changed)
+        watched_any = False
+        for rel_dir in MODEL_DIRS:
+            watch_dir = (ROOT / "models" / rel_dir)
+            if watch_dir.exists():
+                observer.schedule(handler, str(watch_dir), recursive=False)
+                watched_any = True
+            else:
+                print(f"警告：监控目录不存在，跳过 {watch_dir.as_posix()}")
+
+        if not watched_any:
+            print("未找到可监控的目录，结束")
+            return
+
+        observer.start()
+
+        # 解析与刷新采用异步：在后台线程读取 CSV，前台 UI 线程仅负责绘制
+        executor = ThreadPoolExecutor(max_workers=2)
+        loading_future = None
+
+        def _on_close(_event):
+            try:
+                observer.stop()
+                observer.join(timeout=2.0)
+            except Exception:
+                pass
+            try:
+                executor.shutdown(wait=False, cancel_futures=True)
+            except Exception:
+                pass
+
+        if not args.no_window:
+            fig.canvas.mpl_connect("close_event", _on_close)
+
+        def _tick():
+            nonlocal loading_future, series_by_model, x_by_model, global_max_epoch
+            # 窗口已关闭则停止观察者与定时器
+            if not plt.fignum_exists(fig.number):
+                try:
+                    observer.stop()
+                    observer.join(timeout=2.0)
+                except Exception:
+                    pass
+                try:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                except Exception:
+                    pass
+                return
+
+            # 事件防抖后就绪，触发一次异步解析
+            ready_dirs = aggregator.pop_ready(debounce_ms)
+            if ready_dirs and loading_future is None:
+                try:
+                    loading_future = executor.submit(_collect_series)
+                except Exception as e:
+                    print(f"提交解析任务失败：{e}")
+                    loading_future = None
+
+            # 若后台解析已完成，则刷新绘图
+            if loading_future is not None and loading_future.done():
+                try:
+                    series_by_model, x_by_model, global_max_epoch = loading_future.result()
+                    draw_all(series_by_model, x_by_model, global_max_epoch)
+                except Exception as e:
+                    print(f"刷新绘图失败：{e}")
+                finally:
+                    loading_future = None
+
+            try:
+                fig.canvas.draw_idle()
+                plt.pause(0.001)
+            except Exception:
+                pass
+
+        # 两种模式：
+        # 1) 交互窗口 + UI 定时器 + watchdog 事件驱动刷新
+        # 2) 静态图片刷新（无窗口）：仅在防抖就绪时异步解析并保存 PNG
+        if not args.no_window:
+            ui_timer = fig.canvas.new_timer(interval=tick_ms)
+            ui_timer.add_callback(_tick)
+            ui_timer.start()
+        else:
+            # 静态刷新：事件驱动 + 防抖 + 异步解析 + 保存 PNG 文件
+            out_png = ROOT / "result" / "plot_training_watch.png"
+
+            # 定义静态绘制函数（强调最后一个模型：更粗线条与更大点）
+            def render_static():
+                try:
+                    s_by_model, x_model, g_max = _collect_series()
+                    # 创建独立画布，避免与交互画布共享状态
+                    rows = rows_layout
+                    cols = cols_layout
+                    fig2, axes2 = plt.subplots(rows, cols, figsize=(15, 3.5 * rows), squeeze=False)
+                    _setup_cn_font()
+
+                    last_key = MODEL_DIRS[-1] if MODEL_DIRS else None
+                    for idx_key, key in enumerate(PLOT_KEYS):
+                        r = idx_key // cols
+                        c = idx_key % cols
+                        ax = axes2[r][c]
+                        ax.set_title(key, fontsize=11, fontweight='bold')
+                        ax.set_xlabel("Epoch", fontsize=9)
+                        ax.set_ylabel("Value", fontsize=9)
+
+                        legend_handles2 = []
+                        legend_labels2 = []
+
+                        for idx_model, rel_dir in enumerate(MODEL_DIRS):
+                            if rel_dir not in s_by_model:
+                                continue
+                            series = s_by_model[rel_dir]
+                            xs = x_model.get(rel_dir, [])
+                            ys = series.get(key, [])
+                            if not ys:
+                                continue
+
+                            color = _get_model_color(rel_dir, idx_model)
+                            # 区分最后一条配置的模型：加粗线条与更大的点
+                            lw = 2.6 if rel_dir == last_key else 1.0
+                            ms = 6 if rel_dir == last_key else 3
+                            ls = "-" if rel_dir == last_key else "--"
+                            marker = "o" if rel_dir == last_key else "."
+
+                            # 直接绘制并收集图例项
+                            xs_clean = []
+                            ys_clean = []
+                            for xi, yi in zip(xs, ys):
+                                try:
+                                    v = float(yi)
+                                    if math.isnan(v):
+                                        continue
+                                except Exception:
+                                    continue
+                                xs_clean.append(float(xi))
+                                ys_clean.append(v)
+                            if xs_clean and ys_clean:
+                                line = axes2[r][c].plot(xs_clean, ys_clean, color=color, linewidth=lw, linestyle=ls, marker=marker, markersize=ms, label=rel_dir)[0]
+                                legend_handles2.append(line)
+                                legend_labels2.append(rel_dir)
+                            axes2[r][c].grid(True, linestyle="--", alpha=0.3)
+                            if g_max > 0:
+                                axes2[r][c].set_xlim(0, g_max)
+
+                        if legend_handles2:
+                            fig2.legend(legend_handles2, legend_labels2, loc="lower center", bbox_to_anchor=(0.5, 0.92), ncol=min(3, len(legend_labels2)), frameon=True, fontsize=10, borderaxespad=0.0)
+
+                    # 隐藏多余子图
+                    total_sub = rows * cols
+                    for j in range(len(PLOT_KEYS), total_sub):
+                        rr = j // cols
+                        cc = j % cols
+                        axes2[rr][cc].axis("off")
+
+                    plt.tight_layout(rect=[0, 0, 1, 0.90])
+                    plt.subplots_adjust(hspace=0.4, wspace=0.2)
+                    fig2.canvas.draw()
+                    fig2.savefig(out_png, dpi=150)
+                except Exception as e:
+                    print(f"静态绘图保存失败：{e}")
+                finally:
+                    try:
+                        plt.close(fig2)
+                    except Exception:
+                        pass
+
+            # 定义事件驱动的防抖调度器：每次文件变动重置定时器，到期后提交异步渲染
+            class DebounceScheduler:
+                def __init__(self, window_ms: int):
+                    self.window = max(100, int(window_ms)) / 1000.0
+                    self._timer: Optional[threading.Timer] = None
+                    self._lock = threading.Lock()
+                    self._running_future = None
+
+                def schedule(self):
+                    with self._lock:
+                        if self._timer is not None:
+                            try:
+                                self._timer.cancel()
+                            except Exception:
+                                pass
+                        self._timer = threading.Timer(self.window, self._fire)
+                        self._timer.daemon = True
+                        self._timer.start()
+
+                def _fire(self):
+                    with self._lock:
+                        if self._running_future is None or self._running_future.done():
+                            try:
+                                self._running_future = executor.submit(render_static)
+                            except Exception as e:
+                                print(f"提交静态绘图任务失败：{e}")
+                        # 若已有任务在跑，直接忽略，等待其完成
+
+                def shutdown(self):
+                    with self._lock:
+                        if self._timer is not None:
+                            try:
+                                self._timer.cancel()
+                            except Exception:
+                                pass
+                        try:
+                            if self._running_future is not None:
+                                _ = self._running_future.result(timeout=10)
+                        except Exception:
+                            pass
+
+            scheduler = DebounceScheduler(debounce_ms)
+
+            # 事件处理器触发调度器
+            def _mark_and_schedule(rel_dir: str):
+                try:
+                    aggregator.mark_changed(rel_dir)
+                    scheduler.schedule()
+                except Exception:
+                    pass
+
+            # 替换 handler 的标记函数为调度器触发
+            handler = _ResultsCsvHandler(ROOT, MODEL_DIRS, _mark_and_schedule)
+            # 重新绑定观察者（前面已 schedule 原 handler 的场景，这里确保 handler 一致）
+            try:
+                observer.unschedule_all()
+            except Exception:
+                pass
+            watched_any2 = False
+            for rel_dir in MODEL_DIRS:
+                watch_dir = (ROOT / "models" / rel_dir)
+                if watch_dir.exists():
+                    observer.schedule(handler, str(watch_dir), recursive=False)
+                    watched_any2 = True
+            if not watched_any2:
+                print("未找到可监控的目录，结束")
+                try:
+                    observer.stop(); observer.join(timeout=2.0)
+                except Exception:
+                    pass
+                try:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                except Exception:
+                    pass
+                return
+
+            # 启动一次初始绘制
+            scheduler.schedule()
+
+            # headless 主线程保持运行至 Ctrl+C，完全事件驱动无 GUI 阻塞
+            try:
+                while True:
+                    time.sleep(1.0)
+            except KeyboardInterrupt:
+                print("用户中断，退出静态监控模式")
+                try:
+                    scheduler.shutdown()
+                except Exception:
+                    pass
+                try:
+                    observer.stop(); observer.join(timeout=2.0)
+                except Exception:
+                    pass
+                try:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                except Exception:
+                    pass
+
+        # 交互窗口：阻塞式进入 GUI 事件循环，由后端负责事件派发
+        if not args.no_window:
+            try:
+                # 交互模式关闭，确保 show 阻塞而不瞬退
+                plt.ioff()
+                plt.show()
+            except KeyboardInterrupt:
+                print("用户中断，退出监控模式")
+                _on_close(None)
+
+    else:
+        print("绘图完成，未启用监控。若需自动刷新，请使用 --watch 参数。")
+        plt.ioff()
+        plt.show()
 
 
 if __name__ == "__main__":

@@ -41,3 +41,6 @@ models/formal/**
 # 保留 formal/FA-Concat-FPN-PAN-neck 模型权重存放目录及其所有内容（该模型正在训练中）
 !models/formal/FA-Concat-FPN-PAN-neck/
 !models/formal/FA-Concat-FPN-PAN-neck/**
+# 保留 formal/CM-FA-Concat-FPN-PAN-neck 模型权重存放目录及其所有内容（该模型正在训练中）
+!models/formal/CM-FA-Concat-FPN-PAN-neck/
+!models/formal/CM-FA-Concat-FPN-PAN-neck/**

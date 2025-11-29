@@ -100,3 +100,71 @@ class FeatureAttentionConcat(nn.Module):
         fi = self.se_ir(self.inc_ir(x_ir))    # 增强后的 IR 特征
         # 不做加法融合，直接沿通道拼接，保持信息可逆与完整
         return torch.cat([fr, fi], dim=1).contiguous()
+
+
+class CrossModalSE(nn.Module):
+    """跨模态 SE 注意力模块：联合感知 RGB 与 IR 的全局信息后分别生成两路权重
+
+    设计动机：
+    - 传统 SE 为单入单出，权重仅由本模态特征决定，无法在 RGB/IR 质量不一致时做抑制/放大；
+    - 跨模态 SE 同时接收两路特征，先做全局池化得到两个描述符，再在通道维进行早期拼接，
+      通过 1x1 卷积 MLP 联合推理，输出长度为 2*C 的权重，并拆分回两路分别加权。
+    """
+
+    def __init__(self, c1: int, ratio: int = 16):
+        super().__init__()
+        # 这里的中间层通道数基于联合通道数 2*C 进行压缩，避免过拟合同时保留足够表达能力
+        c_joint = 2 * c1
+        c_mid = max(1, c_joint // ratio)
+        # 全局平均池化将每路特征压缩为 [B, C, 1, 1]
+        self.avg = nn.AdaptiveAvgPool2d(1)
+        # 1x1 全卷积实现的两层 MLP：降维 -> SiLU -> 升维 -> Sigmoid 门控
+        self.fc1 = nn.Conv2d(c_joint, c_mid, kernel_size=1, stride=1, padding=0, bias=True)
+        self.act = nn.SiLU(inplace=False)
+        self.fc2 = nn.Conv2d(c_mid, c_joint, kernel_size=1, stride=1, padding=0, bias=True)
+        self.gate = nn.Sigmoid()
+
+    def forward(self, x_rgb: torch.Tensor, x_ir: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """前向：联合两路全局信息，生成并分发权重到各自模态
+
+        输入：
+        - x_rgb, x_ir: 两路特征，形状均为 [B, C, H, W]
+
+        输出：
+        - 分别加权后的两路特征，形状与输入一致
+        """
+        # 分别做全局平均池化得到两路描述符
+        r = self.avg(x_rgb)
+        i = self.avg(x_ir)
+        # 在通道维度早期融合，形成联合上下文向量 [B, 2*C, 1, 1]
+        joint = torch.cat([r, i], dim=1).contiguous()
+        # 联合推理得到长度为 2*C 的权重向量，并用 Sigmoid 映射到 0~1
+        w = self.fc2(self.act(self.fc1(joint)))
+        w = self.gate(w)
+        # 拆分并分发到两路模态，按通道广播相乘
+        w_r, w_i = torch.split(w, x_rgb.size(1), dim=1)
+        return (x_rgb * w_r).contiguous(), (x_ir * w_i).contiguous()
+
+
+class CrossModalFusionAttention(nn.Module):
+    """CM-FA-Concat：Inception 提取 + 跨模态 SE 加权 + 通道拼接
+
+    接口保持与 FA‑Concat 一致：输入为 [RGB, IR]，输出为通道维拼接后的张量，通道数为 2*C。
+    差异在于权重计算由 CrossModalSE 统一建模两路质量，从而在夜间/雾天等场景自动抑制低质量模态。
+    """
+
+    def __init__(self, c1: int):
+        super().__init__()
+        # 两路独立 Inception 特征提取（保持不变）
+        self.inc_rgb = Inception(c1)
+        self.inc_ir = Inception(c1)
+        # 单个跨模态 SE 单元共享使用
+        self.cm_se = CrossModalSE(c1)
+
+    def forward(self, x: list[torch.Tensor] | tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
+        """前向：先独立提取特征，再做跨模态权重分配，最终拼接输出"""
+        x_rgb, x_ir = x
+        fr = self.inc_rgb(x_rgb)
+        fi = self.inc_ir(x_ir)
+        fr_w, fi_w = self.cm_se(fr, fi)
+        return torch.cat([fr_w, fi_w], dim=1).contiguous()

@@ -74,6 +74,24 @@ FusionAttention 由两条对称的处理路径组成（分别处理 RGB 和 IR�
 
 ---
 
+#### **2.1 设计问题与升级路径（FA → FA‑Concat）**
+
+**问题（Add 融合导致的信息缺损）：**
+- 传统 `FusionAttention` 在末端采用逐元素相加（Add）进行两路模态融合；当 RGB 与 IR 在某些通道上呈现相反或互斥的响应时，Add 会出现“相互抵消”的情况；
+- 这会带来信息的不可逆丢失，尤其在复杂光照/噪声场景下对召回率产生抑制，导致模型效果不佳。
+
+**升级（FA‑Concat 仅做特征增强与拼接）：**
+- 为避免上述问题，我们引入 `FeatureAttentionConcat (FA‑Concat)`：分别对 RGB/IR 做 Inception+SE 的特征增强与去噪，不做加法融合，直接在通道维拼接；
+- 这样可以完整保留两路模态的信息，输出形态与基线纯 `Concat` 保持一致（通道为单模态的两倍），便于在 P3/P4/P5 位置快速替换与对比；
+- 实施位置与记录参见：`ultralytics-8.2/ultralytics/nn/modules/fusion.py` 中 `FeatureAttentionConcat` 定义，以及模型配置 `src/cfg/model/dualbackbone_FA-Concat.yaml`。
+
+**进一步改进（CM‑FA‑Concat 跨模态 SE）：**
+- 在 FA‑Concat 基础上，我们将 SE 的“权重视野”从单模态扩展为跨模态联合视角，即 `CrossModalSE`；
+- 其通过在通道维拼接 RGB/IR 的全局描述符，联合推理生成两路权重，从而在夜间、雾天等低质量场景自动抑制劣质模态、放大优势模态；
+- 新模块接口保持与 FA‑Concat 一致（输入两路，输出通道拼接），具体实现位于 `ultralytics-8.2/ultralytics/nn/modules/fusion.py` 的 `CrossModalFusionAttention`。
+
+---
+
 #### **4. 实施步骤 (开发指南)**
 
 **文件位置：** 建议新建文件 `ultralytics-8.2/ultralytics/nn/modules/fusion.py`。
@@ -106,8 +124,20 @@ FusionAttention 由两条对称的处理路径组成（分别处理 RGB 和 IR�
 
 **集成指南：**
 
-1.  **注册：** 在 `ultralytics/nn/tasks.py` 中导入 `FusionAttention` 并加入 `parse_model` 的映射字典。
-2.  **配置：** 在 YAML 文件中，将 `Concat` 替换为 `FusionAttention`。
-    *   原：`[[-1, 17], 1, Concat, [1]]`
-    *   新：`[[-1, 17], 1, FusionAttention, [256]]` (注意：这里 256 应填入具体的通道数，或者依靠 YOLO 的自动推导机制，通常如果不写 args，框架会自动推导输入通道 `c1` 传给 `__init__`)。
+1.  **注册：** 在 `ultralytics/nn/modules/__init__.py` 中导入并导出 `FeatureAttentionConcat` 与 `CrossModalFusionAttention`。
+2.  **配置：** 在 YAML 文件中，将颈部的融合层由纯 `Concat` 替换为 `FeatureAttentionConcat` 或 `CrossModalFusionAttention`。
+    *   示例（FA‑Concat）：`[[7, 17], 1, FeatureAttentionConcat, []]`
+    *   示例（CM‑FA‑Concat）：`[[7, 17], 1, CrossModalFusionAttention, []]`
+3.  **数据与训练：**
+    *   数据集切换到白边裁切版本，输入统一为 `imgsz=640`，验证与测试采用 `rect=True`；
+    *   正式训练建议开启 `mosaic=1.0`，并显式设置 `close_mosaic=0` 保持始终开启；
+    *   测试集评估阶段可启用 `augment=True` 与调大 `iou=0.75` 来提升召回。
+
+---
+
+#### **变更记录（摘要）**
+- 新增改进模块：`FeatureAttentionConcat`（避免 Add 造成信息不可逆丢失，采用增强后通道拼接）。
+- 新增跨模态改进：`CrossModalFusionAttention`（引入 `CrossModalSE` 在联合视角上分配权重）。
+- 新增模型配置：`dualbackbone_FA-Concat.yaml`、`dualbackbone_CM-FA-Concat.yaml`。
+- 快速训练与正式训练脚本已更新以匹配新模块与数据集裁切设置。
 

@@ -135,6 +135,8 @@ def plot_metrics(metrics: dict, out_png: Path) -> None:
     for j in range(len(classes_sorted), 5):
         axes[j].axis("off")
 
+    # 在图片顶部添加模型名称（取输出文件名的 stem）
+    fig.suptitle(f"模型测试结果：{out_png.stem}", fontsize=12, fontweight="bold")
     out_png.parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
     fig.savefig(out_png.as_posix(), dpi=200)
