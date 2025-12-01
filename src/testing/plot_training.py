@@ -31,11 +31,12 @@ from matplotlib import font_manager
 # ===================== 配置区域（请按需修改） =====================
 # 在 models/ 下的训练输出目录（含 results.csv）
 MODEL_DIRS: List[str] = [
-    "formal/fusion-attention/dualbackbone-fusionattention-obb",
-    "formal/dualbackbone-easy-obb-formal6",
-    "formal/dualbackbone-FA-Concat-obb",
+    # "formal/fusion-attention/dualbackbone-fusionattention-obb",
+    # "formal/dualbackbone-easy-obb-formal6",
+    # "formal/dualbackbone-FA-Concat-obb",
     "formal/FA-Concat-FPN-PAN-neck",
     "formal/CM-FA-Concat-FPN-PAN-neck",
+    "IR-YOLOv8n",
     # 可追加其他目录，例如："formal/baseline/dualbackbone-obb"
 ]
 
@@ -222,7 +223,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--watch", action="store_true", help="使用 watchdog 事件驱动监控 CSV 变化并自动刷新绘图")
     parser.add_argument("--debounce-ms", type=int, default=800, help="文件变动防抖时间窗口（毫秒），默认 800ms")
-    parser.add_argument("--tick-ms", type=int, default=20000, help="UI 定时器周期（毫秒），默认 200ms")
+    parser.add_argument("--tick-ms", type=int, default=10000, help="UI 定时器周期（毫秒），默认 10s")
     parser.add_argument("--no-window", action="store_true", help="watch 模式禁用交互窗口，改为静态图片刷新并保存到 result/")
     args = parser.parse_args()
 

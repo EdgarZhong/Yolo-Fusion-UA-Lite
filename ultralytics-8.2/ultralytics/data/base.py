@@ -172,9 +172,9 @@ class BaseDataset(Dataset):
                         side = cv2.imread(f_ir)
                         if side is None:
                             side = np.zeros_like(base)
+                        im = np.concatenate([base, side], axis=2)
                     else:
-                        side = np.zeros_like(base)
-                    im = np.concatenate([base, side], axis=2)
+                        im = base
             else:
                 base = cv2.imread(f_rgb)
                 if base is None:
@@ -183,9 +183,9 @@ class BaseDataset(Dataset):
                     side = cv2.imread(f_ir)
                     if side is None:
                         side = np.zeros_like(base)
+                    im = np.concatenate([base, side], axis=2)
                 else:
-                    side = np.zeros_like(base)
-                im = np.concatenate([base, side], axis=2)
+                    im = base
             if im is None:
                 raise FileNotFoundError(f"Image Not Found {f}")
 

@@ -153,7 +153,14 @@ class BaseValidator:
             self.dataloader = self.dataloader or self.get_dataloader(self.data.get(self.args.split), self.args.batch)
 
             model.eval()
-            c = 6 if getattr(self.args, "task", "") == "obb" else 3
+            val_path = self.data.get(self.args.split, "")
+            def _is_dual_dir(p):
+                try:
+                    name = str(Path(p).name).lower()
+                except Exception:
+                    name = str(p).split(os.sep)[-1].lower()
+                return name in {"trainimg", "valimg", "testimg"}
+            c = 6 if _is_dual_dir(val_path) else 3
             model.warmup(imgsz=(1 if pt else self.args.batch, c, imgsz, imgsz))
 
         self.run_callbacks("on_val_start")

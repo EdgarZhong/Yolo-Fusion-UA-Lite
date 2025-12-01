@@ -491,6 +491,169 @@ class YOLODualDataset(YOLODataset):
             return [None, None, None, None, None, nm, nf, ne, nc, msg]
 
 
+class YOLOIRDataset(YOLODataset):
+    def get_img_files(self, img_path):
+        from ultralytics.data.utils import IMG_FORMATS, FORMATS_HELP_MSG
+        try:
+            files = []
+            paths = img_path if isinstance(img_path, list) else [img_path]
+            for p in paths:
+                p = Path(p)
+                if p.is_dir():
+                    leaf = p.name.lower()
+                    if leaf in {"trainimgr", "valimgr", "testimgr"}:
+                        ir_list = sorted(x for x in p.rglob("*.*") if x.suffix[1:].lower() in IMG_FORMATS)
+                        files.extend(str(x) for x in ir_list)
+                    else:
+                        files.extend(sorted(str(x) for x in p.rglob("*.*") if x.suffix[1:].lower() in IMG_FORMATS))
+                elif p.is_file():
+                    with open(p) as t:
+                        lines = [x.strip() for x in t.read().strip().splitlines() if len(x.strip())]
+                        parent = str(p.parent) + os.sep
+                        for x in lines:
+                            x = x.replace("./", parent) if x.startswith("./") else x
+                            files.append(x)
+                else:
+                    raise FileNotFoundError(f"{self.prefix}{p} 不存在")
+
+            im_files = []
+            for x in files:
+                if x.split(".")[-1].lower() in IMG_FORMATS:
+                    im_files.append(x.replace("/", os.sep))
+            assert im_files, f"{self.prefix}未在 {img_path} 中找到图像。{FORMATS_HELP_MSG}"
+        except Exception as e:
+            raise FileNotFoundError(f"{self.prefix}加载数据失败：{img_path}\n{FORMATS_HELP_MSG}") from e
+
+        if self.fraction < 1:
+            im_files = im_files[: round(len(im_files) * self.fraction)]
+        return im_files
+
+    def get_labels(self):
+        from ultralytics.data.utils import HELP_URL, get_hash, load_dataset_cache_file, save_dataset_cache_file
+        labels = []
+
+        def map_label_path(ir):
+            rp = Path(ir)
+            leaf = rp.parent.name.lower()
+            if leaf in {"trainimgr", "valimgr", "testimgr"}:
+                subset = leaf.replace("imgr", "")
+                base = rp.parent.parent
+                lb_dir = base / f"{subset}labels_yolo_obb"
+                return (lb_dir / (rp.stem + ".txt")).as_posix()
+            from ultralytics.data.utils import img2label_paths
+            return img2label_paths([ir])[0]
+
+        self.label_files = [map_label_path(f) for f in self.im_files]
+        cache_path = Path(self.label_files[0]).parent.with_suffix(".cache")
+        try:
+            cache, exists = load_dataset_cache_file(cache_path), True
+            assert cache["version"] == DATASET_CACHE_VERSION
+            assert cache["hash"] == get_hash(self.label_files + self.im_files)
+        except (FileNotFoundError, AssertionError, AttributeError):
+            cache, exists = self.cache_labels(cache_path), False
+
+        nf, nm, ne, nc, n = cache.pop("results")
+        if exists and LOCAL_RANK in {-1, 0}:
+            d = f"扫描 {cache_path}... {nf} images, {nm + ne} backgrounds, {nc} corrupt"
+            TQDM(None, desc=self.prefix + d, total=n, initial=n)
+            if cache["msgs"]:
+                LOGGER.info("\n".join(cache["msgs"]))
+
+        [cache.pop(k) for k in ("hash", "version", "msgs")]
+        labels = cache["labels"]
+        if not labels:
+            LOGGER.warning(f"WARNING ⚠️ 缓存 {cache_path} 中未发现图像，训练可能异常。{HELP_URL}")
+        return labels
+
+    def cache_labels(self, path=Path("./labels.cache")):
+        x = {"labels": []}
+        nm, nf, ne, nc, msgs = 0, 0, 0, 0, []
+        desc = f"{self.prefix}Scanning {path.parent / path.stem}..."
+        total = len(self.im_files)
+        with ThreadPool(NUM_THREADS) as pool:
+            results = pool.imap(func=lambda args: self._verify_ir_obb_label(*args), iterable=zip(self.im_files, self.label_files, repeat(self.prefix)))
+            pbar = TQDM(results, desc=desc, total=total)
+            for im_file, lb, shape, segments, nm_f, nf_f, ne_f, nc_f, msg in pbar:
+                nm += nm_f
+                nf += nf_f
+                ne += ne_f
+                nc += nc_f
+                if im_file:
+                    x["labels"].append(
+                        {
+                            "im_file": im_file,
+                            "shape": shape,
+                            "cls": lb[:, 0:1],
+                            "bboxes": lb[:, 1:5],
+                            "segments": segments,
+                            "keypoints": None,
+                            "normalized": True,
+                            "bbox_format": "xywh",
+                        }
+                    )
+                if msg:
+                    msgs.append(msg)
+                pbar.desc = f"{desc} {nf} images, {nm + ne} backgrounds, {nc} corrupt"
+            pbar.close()
+
+        if msgs:
+            LOGGER.info("\n".join(msgs))
+        if nf == 0:
+            LOGGER.warning(f"{self.prefix}WARNING ⚠️ No labels found in {path}. {HELP_URL}")
+        x["hash"] = get_hash(self.label_files + self.im_files)
+        x["results"] = nf, nm, ne, nc, len(self.im_files)
+        x["msgs"] = msgs
+        save_dataset_cache_file(self.prefix, path, x, DATASET_CACHE_VERSION)
+        return x
+
+    @staticmethod
+    def _verify_ir_obb_label(im_file, lb_file, prefix):
+        from PIL import Image
+        from ultralytics.data.utils import exif_size
+        nm, nf, ne, nc, msg = 0, 0, 0, 0, ""
+        try:
+            im = Image.open(im_file)
+            im.verify()
+            shape = exif_size(im)
+            shape = (shape[1], shape[0])
+            assert (shape[0] > 9) & (shape[1] > 9), f"image size {shape} <10 pixels"
+
+            if os.path.isfile(lb_file):
+                nf = 1
+                with open(lb_file) as f:
+                    raw = [x.split() for x in f.read().strip().splitlines() if len(x)]
+                lb = np.array(raw, dtype=np.float32)
+                if lb.size:
+                    if lb.shape[1] != 6:
+                        raise AssertionError(f"labels require 6 columns for OBB, {lb.shape[1]} columns detected")
+                    if lb.min() < 0:
+                        raise AssertionError(f"negative label values {lb[lb < 0]}")
+                    if lb[:, 1:5].max() > 1:
+                        raise AssertionError(f"non-normalized or out of bounds coordinates {lb[:, 1:5][lb[:, 1:5] > 1]}")
+                    segments = []
+                    for row in lb:
+                        _, cx, cy, w, h, ang = row.tolist()
+                        hw, hh = w * 0.5, h * 0.5
+                        c, s = np.cos(ang), np.sin(ang)
+                        corners = np.array([[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]], dtype=np.float32)
+                        R = np.array([[c, -s], [s, c]], dtype=np.float32)
+                        rotated = (corners @ R.T) + np.array([cx, cy], dtype=np.float32)
+                        segments.append(rotated)
+                else:
+                    ne = 1
+                    lb = np.zeros((0, 6), dtype=np.float32)
+                    segments = []
+            else:
+                nm = 1
+                lb = np.zeros((0, 6), dtype=np.float32)
+                segments = []
+            return im_file, lb, shape, segments, nm, nf, ne, nc, msg
+        except Exception as e:
+            nc = 1
+            msg = f"{prefix}WARNING ⚠️ {im_file}: ignoring corrupt image/label: {e}"
+            return [None, None, None, None, None, nm, nf, ne, nc, msg]
+
+
 class GroundingDataset(YOLODataset):
     """Handles object detection tasks by loading annotations from a specified JSON file, supporting YOLO format."""
 

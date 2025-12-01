@@ -9,7 +9,7 @@ import torch
 from PIL import Image
 from torch.utils.data import dataloader, distributed
 
-from ultralytics.data.dataset import GroundingDataset, YOLODataset, YOLOMultiModalDataset, YOLODualDataset
+from ultralytics.data.dataset import GroundingDataset, YOLODataset, YOLOMultiModalDataset, YOLODualDataset, YOLOIRDataset
 from ultralytics.data.loaders import (
     LOADERS,
     LoadImagesAndVideos,
@@ -94,7 +94,22 @@ def build_yolo_dataset(cfg, img_path, batch, data, mode="train", rect=False, str
                 return True
         return False
 
-    dataset = YOLODualDataset if _is_dual_dir(img_path) else (YOLOMultiModalDataset if multi_modal else YOLODataset)
+    def _is_ir_dir(p):
+        ps = p if isinstance(p, list) else [p]
+        for x in ps:
+            try:
+                name = Path(x).name.lower()
+            except Exception:
+                name = str(x).split(os.sep)[-1].lower()
+            if name in {"trainimgr", "valimgr", "testimgr"}:
+                return True
+        return False
+
+    dataset = (
+        YOLODualDataset
+        if _is_dual_dir(img_path)
+        else (YOLOIRDataset if _is_ir_dir(img_path) else (YOLOMultiModalDataset if multi_modal else YOLODataset))
+    )
     return dataset(
         img_path=img_path,
         imgsz=cfg.imgsz,

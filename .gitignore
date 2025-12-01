@@ -28,6 +28,7 @@ models/fusion-attention/**
 models/formal/**
 !models/formal/
 !models/formal/.gitkeep
+models/IR-YOLOv8n/**
 # 保留 formal/dualbackbone-easy-obb-formal6 模型权重存放目录及其所有内容
 !models/formal/dualbackbone-easy-obb-formal6/
 !models/formal/dualbackbone-easy-obb-formal6/**
