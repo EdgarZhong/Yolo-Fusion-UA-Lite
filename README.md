@@ -98,7 +98,7 @@
 ### 进度情况
    **阶段一：已完成**
    **阶段二：已完成**
-   **阶段三：待实施**
+   **阶段三：正在实施**
 
 ### 重要约定（更新）
 - 任务类型：YOLO‑OBB（旋转框检测），标签为 6 列格式 `class cx cy w h angle`（归一化，角度为弧度），样例见 `data/train/trainlabels_yolo_obb/00001.txt`
@@ -108,8 +108,8 @@
 - 分辨率策略 **（采用data/下的未裁切数据集）**：训练阶段使用 `imgsz=832` 且 `rect=False`（开启随机打乱，`mosaic=0`），不进行任何裁切或标签重计算；验证与测试阶段使用 `imgsz=832` 且 `rect=True`，不做其它操作。
 - 数据增强 **（采用data/下的未裁切数据集）**：默认禁用（mosaic/mixup/copy_paste/erasing/flip/HSV 等均关闭），保证原生分布
 
-- 分辨率策略 **（采用data_croped/下的裁切数据集）**：训练阶段使用 `imgsz=640` 且 `rect=False`（开启随机打乱），验证与测试阶段使用 `imgsz=640` 且 `rect=True` 保持 640×512 的矩形分桶。
-- 数据增强 **（采用data_croped/下的裁切数据集）**：正式训练开启 `mosaic=1.0`，其余增强（mixup/copy_paste/erasing/flip/HSV 等）保持关闭，保证主分布稳定；验证阶段不使用增强。
+- 分辨率策略 **（采用data_croped/下的裁切掉白边的数据集）**：训练阶段使用 `imgsz=640` 且 `rect=False`（开启随机打乱），验证与测试阶段使用 `imgsz=640` 且 `rect=True` 保持 640×512 的矩形分桶。
+- 数据增强 **（采用data_croped/下的裁切掉白边的数据集）**：正式训练开启 `mosaic=1.0`，其余增强（mixup/copy_paste/erasing/flip/HSV 等）保持关闭，保证主分布稳定；验证阶段不使用增强。
 
 ### 环境与激活
 

@@ -23,10 +23,14 @@ from ultralytics.models.yolo.obb import OBBTrainer  # noqa: E402
 
 
 def default_resume_path() -> Path:
-    """返回默认的 last.pt 路径，如果不存在则返回运行目录路径用于框架内部查找。"""
-    run_dir = ROOT / "models" / "formal" / "CM-FA-Concat-FPN-PAN-neck"
-    last_pt = run_dir / "weights" / "last.pt"
-    return last_pt if last_pt.exists() else run_dir
+    """返回默认 last.pt 路径，优先适配 FA‑Concat 后训练输出；若不存在回退到正式训练目录。"""
+    post_dir = ROOT / "models" / "posttrain" / "FA-Concat_FPN-PAN_tuned"
+    post_last = post_dir / "weights" / "last.pt"
+    if post_last.exists():
+        return post_last
+    formal_dir = ROOT / "models" / "formal" / "CM-FA-Concat-FPN-PAN-neck"
+    formal_last = formal_dir / "weights" / "last.pt"
+    return formal_last if formal_last.exists() else post_dir
 
 
 def main():
@@ -41,6 +45,7 @@ def main():
     parser.add_argument("--imgsz", type=int, default=None, help="可选覆盖：输入尺寸")
     parser.add_argument("--batch", type=int, default=None, help="可选覆盖：批大小")
     parser.add_argument("--device", type=str, default=None, help="可选覆盖：设备，如 '0'、'0,1' 或 'cpu'")
+    parser.add_argument("--freeze", type=int, default=0, help="可选覆盖：按层冻结前 N 层（设 0 关闭冻结）")
     args = parser.parse_args()
 
     overrides = {
@@ -55,6 +60,8 @@ def main():
         overrides["batch"] = args.batch
     if args.device is not None:
         overrides["device"] = args.device
+    if args.freeze is not None:
+        overrides["freeze"] = args.freeze
 
     # 运行信息提示
     print("[Resume][OBB] 断点续训启动：")
@@ -70,11 +77,15 @@ def main():
         print(f"override batch={args.batch}")
     if args.device is not None:
         print(f"override device={args.device}")
+    if args.freeze is not None:
+        print(f"override freeze={args.freeze}")
 
     trainer = OBBTrainer(overrides=overrides)
+    # 由于 Ultralytics 的 check_resume 仅允许覆盖 imgsz/batch/device，这里在实例化后强制覆盖 freeze
+    if args.freeze is not None:
+        trainer.args.freeze = args.freeze
     trainer.train()
 
 
 if __name__ == "__main__":
     main()
-

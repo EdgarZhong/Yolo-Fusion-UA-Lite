@@ -32,11 +32,12 @@ from matplotlib import font_manager
 # 在 models/ 下的训练输出目录（含 results.csv）
 MODEL_DIRS: List[str] = [
     # "formal/fusion-attention/dualbackbone-fusionattention-obb",
-    # "formal/dualbackbone-easy-obb-formal6",
+    "formal/dualbackbone-easy-obb-formal6",
     # "formal/dualbackbone-FA-Concat-obb",
     "formal/FA-Concat-FPN-PAN-neck",
     "formal/CM-FA-Concat-FPN-PAN-neck",
-    "IR-YOLOv8n",
+    "posttrain/FA-Concat_FPN-PAN_tuned"
+    # "IR-YOLOv8n",
     # 可追加其他目录，例如："formal/baseline/dualbackbone-obb"
 ]
 

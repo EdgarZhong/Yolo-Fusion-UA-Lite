@@ -44,9 +44,9 @@ from ultralytics.utils.torch_utils import select_device  # noqa: E402
 
 # ===================== 路径与常量约定 =====================
 DATA_CFG = ROOT / "src/cfg/datasets/dual_obb_dronevehicle.yaml"  # 数据集 YAML（绝对路径）
-WEIGHTS_DIR = ROOT / "models/formal/CM-FA-Concat-FPN-PAN-neck"  # 训练输出目录
+WEIGHTS_DIR = ROOT / "models/posttrain/FA-Concat_FPN-PAN_tuned"  # 训练输出目录
 DEFAULT_RESULT_DIR = ROOT / "result"  # 默认评估输出根目录
-DEFAULT_RUN_NAME = "CM-FA-Concat-FPN-PAN-neck-100epoch-aug-iou0.75"  # 默认评估结果文件名（不含扩展名）
+DEFAULT_RUN_NAME = "FA-Concat-FPN_PAN_tuned-100epoch-aug-iou0.75"  # 默认评估结果文件名（不含扩展名）
 
 IMG_SIZE = 640  # 使用裁切后统一分辨率宽度，配合 rect=True 保持 640x512 形状
 BATCH = 16  # 可根据显存/CPU性能调整
