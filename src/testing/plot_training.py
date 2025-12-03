@@ -36,8 +36,8 @@ MODEL_DIRS: List[str] = [
     # "formal/dualbackbone-FA-Concat-obb",
     "formal/FA-Concat-FPN-PAN-neck",
     "formal/CM-FA-Concat-FPN-PAN-neck",
-    "posttrain/FA-Concat_FPN-PAN_tuned"
-    # "IR-YOLOv8n",
+    "posttrain/FA-Concat_FPN-PAN_tuned",
+    "IR-YOLOv8n/from_scrach/train",
     # 可追加其他目录，例如："formal/baseline/dualbackbone-obb"
 ]
 

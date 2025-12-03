@@ -1,5 +1,42 @@
+## 阶段三工作记录（双主干模型，FPN/PANet 颈部结构，CM-FA实现和权重迁移调优）
 
-## 阶段二工作记录（FusionAttention模块，双主干模型）
+### 2025-12-3 变更记录
+
+- IR 单模态对照组训练与验证（严格与双主干保持解耦、验证参数统一）
+  - 数据集配置：`src/cfg/datasets/ir_obb_dronevehicle_raw.yaml:1-22`
+    - 指向原始含白边 IR 目录：`data/<subset>/<subset>imgr`（仅单模态），任务类型 `task: obb`
+    - 类别与数量：`nc=5, names=["car","truck","bus","van","freight_car"]`
+  - 训练脚本：`src/trainning/ir_yolov8n_from_scratch.py:35-52,55-111,114-157`
+    - 自定义 `IR_OBB_Trainer`：仅重写 `get_model` 返回 3 通道原版 OBB 模型；不加载预训练权重，从零初始化（`35-52`）
+    - 关闭所有数据增强，训练 100 轮，输出目录：`models/IR-YOLOv8n/from_scrach`（`55-111`）
+    - 命令行入口（参数可覆盖）：`device/epochs/batch/imgsz`（`114-157`）
+  - 恢复训练脚本：`src/trainning/resume_train.py:75-137`
+    - 自动解析 `--resume`（支持运行目录或 `.pt`），并从检查点推断输入通道数（3/6），据此选择匹配训练器（`75-93`,`131-136`）
+    - IR 单模态训练器已修复：当传入权重时调用 `model.load(weights)`，避免恢复训练时权重未加载导致验证精度为 0（`35-38`）
+    - 验证器关键参数显式对齐双主干设置以便对比：`iou=0.7`、`max_det=300`、`plots=False`、`val=True`（`94-102`）
+  - 验证逻辑说明：`
+    - OBB 验证器在验证阶段提高置信度下限到 `0.25` 并按旋转框做 NMS（`ultralytics-8.2/ultralytics/models/yolo/obb/val.py:40-61`）
+    - 本次 IR 单模态对照与双主干验证使用同一验证器参数，确保横向对比公平
+  - 解耦与一致性：
+    - 数据加载：目录叶名选择数据集（`*imgr/`→单模态 IR；`*img/`→双模态），不需切换框架代码
+    - 模型构建：IR 训练脚本内自定义 Trainer；未改动双主干训练器（`ultralytics-8.2/ultralytics/models/yolo/obb/train.py:31-39`）
+    - 评估参数：统一 `iou/max_det/conf` 行为（`conf` 在验证器内部提升），保证与双主干一致对比
+  - 产物与追踪：
+    - 训练与验证输出：`models/IR-YOLOv8n/from_scrach/train`（含 `weights/last.pt`、`results.csv` 等）
+    - 已更新 `.gitignore`：新增对该输出目录的“反忽略”规则，仓库追踪该目录内所有内容，便于对照与复现实验（`.gitignore:31-36`）
+  - 使用示例：
+    - 从零训练（GPU）：`python src/trainning/ir_yolov8n_from_scratch.py --device 0`
+    - 快速验证（1 轮）：`python src/trainning/ir_yolov8n_from_scratch.py --device 0 --epochs 1 --batch 8 --imgsz 640`
+    - 断点续训（自动识别 3/6 通道并加载权重）：
+      - 传运行目录：`python src/trainning/resume_train.py --resume models/IR-YOLOv8n/from_scrach/train --device 0`
+      - 传权重文件：`python src/trainning/resume_train.py --resume models/IR-YOLOv8n/from_scrach/train/weights/last.pt --device 0`
+
+### 2025-12-1 变更记录（实现权重迁移的FA-Concat_FPN-PAN模型训练）
+- 详见`FA-Concat-neck权重迁移和深度调优手册.md`
+
+### 2025-11-30 变更记录（实现CrossModal-FusionAttention模块）
+- 直接从随机参数初始化训练效果不佳，推测是由于模型结构复杂（跨模态注意力机制使双模态梯度优化耦合，加之主干from scratch特征提取混乱）优化极为困难，导致训练过程中无法收敛到最优解(100epoch的CM-FA+FPN-PAN-neck模型精度略低于FA-Concat_FPN-PAN-neck模型)
+- 因此，拟在训练前，先使用预训练权重（如 YOLOv8n）进行初始化主干，进行后训练调优
 
 ### 2025-11-28 变更记录（白边裁切、mosaic 启用、验证预览增强）
 - 数据集白边裁切工具新增：`src/dataset_preprocess/crop_white_borders.py:1-405`
@@ -25,6 +62,11 @@
 - 运行裁切后再训练：`python src/dataset_preprocess/crop_white_borders.py --subset all --workers 8`
 - 训练：`python src/trainning/train_formal.py`
 - 裁切集预览核验：`python src/dataset_preprocess/verify_obb_preview.py --data-root data_croped --subset test --start-index 0`
+
+### 2025-11-27 变更记录（增加FPN/PANet 的neck结构，模型性能提升）
+- 完成迭代v2.0
+
+## 阶段二工作记录（FusionAttention模块，双主干模型）
 
 ### 2025-11-26 变更记录（FA‑Concat 改进与快速验证）
 - 新增改进模块：`FeatureAttentionConcat`，避免逐元素相加造成的不可逆信息丢失，采用 Inception+SE 逐模态增强后通道拼接（输出通道为单模态两倍）。

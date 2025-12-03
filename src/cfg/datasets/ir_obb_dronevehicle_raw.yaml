@@ -1,0 +1,21 @@
+# 单模态 IR OBB 数据集配置（原始含白边数据，位于 data/ 下）
+# 说明：
+# - 本配置用于在未裁切（含白边）的原始数据上进行 IR 单模态训练/验证/测试。
+# - 图像目录遵循约定：IR 位于 `{subset}imgr/`，标签位于 `{subset}labels_yolo_obb/`，与图像同名 `.txt`。
+# - 我们在框架中实现了 `YOLOIRDataset`，当 `train/val/test` 指向 `*imgr/` 目录时会自动启用该数据集类。
+
+# 仓库根路径（绝对路径，保持与其他配置一致）
+path: D:/Code/DeepLearning/YOLO-Fusion-UA-Lite
+
+# 原始（含白边）IR 图像目录（data/ 下，不使用裁切版 data_croped/）
+train: data/train/trainimgr
+val: data/val/valimgr
+test: data/test/testimgr
+
+# 类别数与类别名（与项目统一）
+nc: 5
+names: ["car", "truck", "bus", "van", "freight_car"]
+
+# 任务类型（OBB 旋转框检测）
+task: obb
+

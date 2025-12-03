@@ -29,6 +29,11 @@ models/formal/**
 !models/formal/
 !models/formal/.gitkeep
 models/IR-YOLOv8n/**
+# 追踪 IR 单模态从零训练输出目录（from_scrach/train）内的所有内容，便于对照实验比对
+!models/IR-YOLOv8n/
+!models/IR-YOLOv8n/from_scrach/
+!models/IR-YOLOv8n/from_scrach/train/
+!models/IR-YOLOv8n/from_scrach/train/**
 # 保留 formal/dualbackbone-easy-obb-formal6 模型权重存放目录及其所有内容
 !models/formal/dualbackbone-easy-obb-formal6/
 !models/formal/dualbackbone-easy-obb-formal6/**
