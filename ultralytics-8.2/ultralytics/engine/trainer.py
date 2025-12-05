@@ -547,6 +547,7 @@ class BaseTrainer:
         """
         try:
             if self.args.task == "classify":
+                # 分类任务：支持通过 split/use_test_as_val 控制验证集来源
                 data = check_cls_dataset(self.args.data)
             elif self.args.data.split(".")[-1] in {"yaml", "yml"} or self.args.task in {
                 "detect",
@@ -560,7 +561,17 @@ class BaseTrainer:
         except Exception as e:
             raise RuntimeError(emojis(f"Dataset '{clean_url(self.args.data)}' error ❌ {e}")) from e
         self.data = data
-        return data["train"], data.get("val") or data.get("test")
+        # 选择验证集：
+        # - 若显式传入 use_test_as_val=True，则强制使用 test 作为验证集；
+        # - 否则若 split=test，则优先使用 test；
+        # - 默认使用 val，若缺失则回退 test。
+        use_test_flag = bool(getattr(self.args, "use_test_as_val", False))
+        split_flag = str(getattr(self.args, "split", "val")).lower()
+        if use_test_flag or split_flag == "test":
+            val_path = data.get("test") or data.get("val")
+        else:
+            val_path = data.get("val") or data.get("test")
+        return data["train"], val_path
 
     def setup_model(self):
         """Load/create/download model for any task."""

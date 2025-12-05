@@ -1,0 +1,31 @@
+# 双模态 OBB 数据集配置（DroneVehicle）
+# 说明：
+# - 本配置文件用于 Ultralytics YOLOv8 OBB 任务的训练/验证/测试数据加载。
+# - 数据目录遵循仓库约定：RGB 与 IR 分别位于 `<subset>img/` 与 `<subset>imgr/`，标签位于 `{subset}labels_yolo_obb/`。
+# - 我们在官方源码中实现了 `YOLODualDataset`，其会自动识别 `trainimg/valimg/testimg` 目录并与相邻的 `imgr` 目录配对，
+#   将同名 RGB/IR 图像按通道维拼接为 6 通道输入（前 3 通道为 RGB，后 3 通道为 IR）。标签映射固定到 `{subset}labels_yolo_obb/`。
+# - 因此此处只需将 `train/val/test` 指向 RGB 目录（`*img/`），即可完成双路数据的加载。
+
+# 数据集根目录（绝对路径，按 README 约定指向仓库根）
+path: D:/Code/DeepLearning/YOLO-Fusion-UA-Lite
+
+# 训练/验证/测试图像目录（原始含白边数据集；IR 目录由数据集类自动推断为同级的 `*imgr/`）
+train: data/train/trainimg
+val: data/val/valimg
+test: data/test/testimg
+
+# 类别数与类别名（来源：`data/classes.txt`）
+# 注意：Ultralytics 支持 names 为 list 或 dict，此处使用 list 以保持简洁。
+nc: 5
+names: ["car", "truck", "bus", "van", "freight_car"]
+
+# 任务类型（可选，仅用于明确配置意图；训练器会在内部强制设定为 obb）
+task: obb
+
+# 额外说明：
+# - 标签格式：6 列，`class cx cy w h angle`，其中 `cx, cy, w, h` 为归一化到 [0,1] 的中心宽高，`angle` 为弧度。
+# - 目录示例：
+#   - 训练集：`data/train/trainimg/`（RGB） 与 `data/train/trainimgr/`（IR）
+#   - 验证集：`data/val/valimg/`（RGB） 与 `data/val/valimgr/`（IR）
+#   - 测试集：`data/test/testimg/`（RGB） 与 `data/test/testimgr/`（IR）
+#   - 标签：`data/<subset>/{subset}labels_yolo_obb/`（与图像同名 `.txt`）

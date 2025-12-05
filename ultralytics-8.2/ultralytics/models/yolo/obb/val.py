@@ -45,7 +45,7 @@ class OBBValidator(DetectionValidator):
         # 2) 放宽 NMS 超时阈值：将每图的时间片设置为 0.1s，使得在常见 batch=10~12 时总时限≈3s
         #    Ultralytics 内部公式：time_limit = 2.0 + max_time_img * bs
         #    取 0.1 时，bs=10 => 3.0s，bs=12 => 3.2s，满足“放宽到约 3s”的要求。
-        max_time_img = 0.1
+        max_time_img = 0.2
 
         return ops.non_max_suppression(
             preds,

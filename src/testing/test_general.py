@@ -43,16 +43,16 @@ from ultralytics.utils.torch_utils import select_device  # noqa: E402
 
 
 # ===================== 路径与常量约定 =====================
-DATA_CFG = ROOT / "src/cfg/datasets/dual_obb_dronevehicle.yaml"  # 数据集 YAML（绝对路径）
-WEIGHTS_DIR = ROOT / "models/posttrain/FA-Concat_FPN-PAN_tuned"  # 训练输出目录
+DATA_CFG = ROOT / "src/cfg/datasets/dual_obb_dronevehicle.yaml"  # 裁切后 640×512 的数据集 YAML（绝对路径）
+WEIGHTS_DIR = ROOT / "models/formal/posttrain/Final_Recall_640_Regularized"  # Recall 微调输出目录
 DEFAULT_RESULT_DIR = ROOT / "result"  # 默认评估输出根目录
-DEFAULT_RUN_NAME = "1"  # 默认评估结果文件名（不含扩展名）
+DEFAULT_RUN_NAME = "Final_Recall_640_Regularized"  # 默认评估结果文件名（不含扩展名）
 
-IMG_SIZE = 640  # 使用裁切后统一分辨率宽度，配合 rect=True 保持 640x512 形状
+IMG_SIZE = 640  # 裁切后数据集统一分辨率宽度，配合 rect=True 保持 640x512 形状
 BATCH = 16  # 可根据显存/CPU性能调整
-CONF_THRES = 0.25  
+CONF_THRES = 0.25  # 统一测试标准：置信度阈值 0.25
 IOU_THRES = 0.75
-MAX_DET = 300
+MAX_DET = 1000  # 增大最大候选框数量以提升召回，并在创建验证器时打印确认
 
 
 def _find_weights(base: Path) -> Path:
@@ -135,8 +135,10 @@ def run_eval(
             pin_memory=False,
         )
         validator = OBBValidator(dataloader=loader, args=args)
+        print(f"[Eval][OBB] 已创建验证器（子集）并透传 max_det={getattr(validator.args, 'max_det', None)}")
     else:
         validator = OBBValidator(args=args)
+        print(f"[Eval][OBB] 已创建验证器并透传 max_det={getattr(validator.args, 'max_det', None)}")
 
     stats = validator(model=str(weights))  # 执行验证，返回字典：precision/recall/mAP50/mAP50-95 等
 

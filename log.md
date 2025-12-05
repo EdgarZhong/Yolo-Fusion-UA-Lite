@@ -1,3 +1,20 @@
+## 阶段四工作记录（最终微调：高分辨率与正则化）
+
+### 2025-12-5 变更记录（最终微调 Phase I：高分辨率特征探索）
+- 背景：在 `FA-Concat_FPN-PAN_tuned` 基线上，将分辨率回归提升至 800，探索小目标的像素密度增益（见 `双模态 YOLO-OBB 模型调参优化与策略分析报.md:34-58`）。
+- 训练脚本：`src/trainning/final_polish_train.py:31-141`（`imgsz=800/SGD/lr0=0.0025/lrf=0.05/cos_lr=True`；关闭 `mosaic/mixup/HSV/degrees/flipud`，保留 `translate=0.05/scale=0.1/fliplr=0.5`）。
+- 输出目录：`models/posttrain/Final_Polish_800_FlipScale/`（分阶段保存，便于对比）。
+- 结果：`mAP50 0.74447`、`Recall 0.69539`、`Precision 0.78097`，较基线略降（见报告 `:48-55`）。
+- 结论：高分辨率在本数据分布下无显著增益，存在特征尺度错位与插值无增益问题，建议回归 640 并转向“正则化+损失重加权”。
+
+### 2025-12-5 变更记录（最终微调 Phase II：正则化与难样本挖掘）
+- 背景：针对模型“过度自信”和“漏检难样本”，引入强正则化与损失重加权，目标提升 Recall（见 `提升recall的最终微调.md:3-36`）。
+- 训练脚本：`src/trainning/final_recall_train.py:31-162`（`imgsz=640/SGD/lr0=0.001/lrf=0.05/cos_lr=True`；`dropout=0.15/label_smoothing=0.1/weight_decay=0.001/warmup_epochs=0`；`cls=1.5/box=8.5/dfl=1.5`；关闭复杂增强，保留 `fliplr=0.5/translate=0.1/scale=0.2`）。
+- 验证统一：训练内置 `conf=0.25`；评估脚本适配 `src/testing/test_general.py:46-56,137-141`（`IMG_SIZE=640/CONF_THRES=0.25/IOU_THRES=0.75/MAX_DET=1000`，并打印透传确认）。
+- 断点续训：`src/trainning/resume_train.py:27-37,153-161`（默认指向 Recall 目录；验证统一 `iou=0.75/conf=0.25/max_det=1000`；鲁棒推断输入通道数并选择匹配训练器）。
+- 结果：`mAP50 0.74563`、`Recall 0.70054`、`Precision 0.76284`，与基线相近（见报告 `:79-84`）。
+- 结论：正则化降低过度自信但 Recall 提升有限；后续建议转向“跨模态注意力的课程学习”、“AI超分重建”、“轻量级上下文建模”（报告第 6 节）。
+
 ## 阶段三工作记录（双主干模型，FPN/PANet 颈部结构，CM-FA实现和权重迁移调优）
 
 ### 2025-12-3 变更记录
@@ -32,7 +49,10 @@
       - 传权重文件：`python src/trainning/resume_train.py --resume models/IR-YOLOv8n/from_scrach/train/weights/last.pt --device 0`
 
 ### 2025-12-1 变更记录（实现权重迁移的FA-Concat_FPN-PAN模型训练）
-- 详见`FA-Concat-neck权重迁移和深度调优手册.md`
+ - 详见`FA-Concat-neck权重迁移和深度调优手册.md`
+ - 权重迁移（阶段一）：在 `state_dict` 层进行双分支映射（RGB→双主干左支，IR→右支），生成热启动权重以降低从零训练的冷启动难度（参见文档 3.1-3.3）。
+ - 深度调优（阶段二）：关闭破坏物理属性的增强（HSV/旋转等），保留适度几何扰动与末期关闭 Mosaic 的课程策略，保护迁移特征并在真实分布上收敛（文档 4.1-A/B, 5 节）。
+ - 产物：统一输出到 `models/posttrain/FA-Concat_FPN-PAN_tuned/`，作为后续最终微调的基线权重。
 
 ### 2025-11-30 变更记录（实现CrossModal-FusionAttention模块）
 - 直接从随机参数初始化训练效果不佳，推测是由于模型结构复杂（跨模态注意力机制使双模态梯度优化耦合，加之主干from scratch特征提取混乱）优化极为困难，导致训练过程中无法收敛到最优解(100epoch的CM-FA+FPN-PAN-neck模型精度略低于FA-Concat_FPN-PAN-neck模型)
@@ -64,7 +84,11 @@
 - 裁切集预览核验：`python src/dataset_preprocess/verify_obb_preview.py --data-root data_croped --subset test --start-index 0`
 
 ### 2025-11-27 变更记录（增加FPN/PANet 的neck结构，模型性能提升）
-- 完成迭代v2.0
+ - 完成迭代v2.0
+ - 模型：在双主干基础上加入 FPN/PAN 颈部结构（P3/P4/P5 三尺度），增强多尺度特征融合能力，后接 OBB 头（参考 `src/cfg/model/dualbackbone_easy_obb.yaml:56-74`）。
+ - 融合：由纯 Concat 逐步演进至 `FeatureAttentionConcat` 保持两路信息可逆性（见 `ultralytics-8.2/ultralytics/nn/modules/fusion.py:65-102`）。
+ - 训练/验证：训练 `rect=False`；验证/测试 `rect=True` 且分辨率统一到 `640×512`，核验脚本 `src/dataset_preprocess/verify_obb_preview.py:1-80`。
+ - 用作权重迁移与最终微调的结构基线。
 
 ## 阶段二工作记录（FusionAttention模块，双主干模型）
 
