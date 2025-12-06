@@ -84,10 +84,12 @@ def run_eval(
     """
     运行 OBB 验证流程（split=test），保存评估指标到 指定目录（默认 result/）
     """
-    # 结果目录与命名处理：若未指定则使用默认
+    # 结果目录与命名处理：若未指定则使用默认；输出统一到 result/<模型目录>/<文件>
     result_root = Path(result_dir) if result_dir else DEFAULT_RESULT_DIR
     result_root.mkdir(parents=True, exist_ok=True)
     name = run_name or DEFAULT_RUN_NAME
+    out_dir = result_root / name
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     # 组装验证参数（保持与项目约定一致）
     # 根据设备类型设置 workers（CPU 场景下置 0 更稳定）
@@ -171,13 +173,13 @@ def run_eval(
     enriched["names"] = names
     enriched["classes"] = per_class
 
-    # 保存 JSON 结果（用于后续绘图脚本读取）
-    json_file = result_root / f"{name}.json"
+    # 保存 JSON 结果（用于后续绘图脚本读取），到 result/<name>/<name>.json
+    json_file = out_dir / f"{name}.json"
     with open(json_file, "w", encoding="utf-8") as f:
         json.dump(enriched, f, ensure_ascii=False, indent=2)
 
-    # 同步保存 CSV 版本（便于 Excel/表格工具使用）
-    csv_file = result_root / f"{name}.csv"
+    # 同步保存 CSV 版本（便于表格使用），到 result/<name>/<name>.csv
+    csv_file = out_dir / f"{name}.csv"
     with open(csv_file, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         # 总体指标
@@ -192,7 +194,7 @@ def run_eval(
             w.writerow([item["name"], item["precision"], item["recall"], item["ap50"], item["ap"]])
 
     # 验证器将在 `result/<run_name>/` 目录下生成 `predictions.json`
-    return result_root / name
+    return out_dir
 
 
 

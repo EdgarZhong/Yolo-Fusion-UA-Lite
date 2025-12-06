@@ -91,14 +91,16 @@
 
 **迭代 v2.2: "The Final Polish" (后训练微调)**
 *   **目标：** 挖掘最强模型的最后潜力。
-*   **方案：** 选取基线、 v2.0 或 v2.1 中的胜者，加载权重，微调具体方案待定。
+*   **方案：** 见双模态 YOLO-OBB 模型调参优化与策略分析报告。
 
 ## 项目核心信息
 
 ### 进度情况
-   **阶段一：已完成**
-   **阶段二：已完成**
-   **阶段三：正在实施**
+   **阶段一：已完成**（双主干简易基线与数据/训练流程搭建）
+   **阶段二：已完成**（FusionAttention/FA‑Concat/CM‑FA‑Concat 模块实现与验证）
+   **阶段三：已完成**（FPN/PAN 颈部结构补全与统一评估脚本）
+   **阶段四：已完成**（最终微调：高分辨率探索与正则化难样本挖掘）
+   当前状态：项目实施告一段落，模型与评估体系稳定。统一测试标准：`imgsz=640`、`conf=0.25`、`iou=0.75`、`max_det=1000`，并支持 `use_test_as_val=True` 在训练期以测试集做验证。
 
 ### 重要约定（更新）
 - 任务类型：YOLO‑OBB（旋转框检测），标签为 6 列格式 `class cx cy w h angle`（归一化，角度为弧度），样例见 `data/train/trainlabels_yolo_obb/00001.txt`
@@ -148,6 +150,56 @@
  - 数据集 YAML 已切换至裁切后目录：`src/cfg/datasets/dual_obb_dronevehicle.yaml` 的 `train/val/test` 指向 `data_croped/<subset>/<subset>img`
  - 验证脚本统一为 `imgsz=640` 与 `rect=True`，保持 640×512 输入：`src/testing/test_general.py:51`
 
+### 测试脚本：`src/testing/test_general.py` 用法
+
+- 原理说明（按 log 校正）：脚本使用 `OBBValidator` 在测试集进行评估，固定 `imgsz=640`、`rect=True`，透传 `max_det=1000`（`src/testing/test_general.py:55,97-115,138-141`）。单双模态的训练与验证流程保持解耦，参数统一由数据集 YAML 与脚本内路径宏控制。
+- 推荐做法：直接修改脚本顶部路径宏以匹配你的模型与数据路径（`src/testing/test_general.py:46-55`）。
+- 参数列表：
+  - `--device cpu|<gpu_index>` 运行设备，默认 `0`（GPU）。
+  - `--weights <pt或目录>` 权重文件或训练输出目录（未提供时按脚本宏自动查找，见 `_find_weights`：`src/testing/test_general.py:58-72`）。
+  - `--model-name <str>` 结果目录名（用于 `result/<model-name>/`）。
+  - `--result-dir <path>` 结果输出根目录（默认 `result`）。
+  - `--test-ratio <0-1]` 测试集比例；小于 1.0 时按比例构建子集 DataLoader（`src/testing/test_general.py:117-136`）。
+  - `--test-aug` 测试增强（多尺度/翻转）。
+  - `--iou <float>` NMS 的 IOU 阈值（默认 `0.75`）。
+- 输出文件：
+  - `result/<model-name>/<model-name>.json` 与 `result/<model-name>/<model-name>.csv`（写入逻辑见 `src/testing/test_general.py:174-193`）。
+  - 验证器生成 `result/<model-name>/predictions.json`（按 Ultralytics 约定）。
+- 示例命令（建议先按需修改脚本顶部路径宏）：
+  - `python src/testing/test_general.py --device 0 --model-name Final_Recall_640_Regularized --result-dir result`
+  - `python src/testing/test_general.py --weights models/posttrain/Final_Recall_640_Regularized --model-name RecallReg --result-dir result`
+  - `python src/testing/test_general.py --weights models/IR-YOLOv8n/from_scrach/train/weights/best.pt --model-name IR-YOLOv8n --device 0`
+  - `python src/testing/test_general.py --device cpu --test-ratio 0.2 --model-name quick-sample`
+
+
+### 模型信息表（按名称序列汇总）
+
+| 名称 | 权重存放目录 | 测试结果存放目录 | 使用的数据集 | 测试集mAP |
+| :-- | :-- | :-- | :-- | :-- |
+| 双主干简单拼接基线模型 | `models/formal/dualbackbone-easy-obb-formal6/weights` | `result/baseline-100epoch` | 有白边原图 | 0.6632 |
+| IR单模态基线模型 | `models/IR-YOLOv8n/from_scrach/train/weights` | `result/IR-YOLOv8n` | 有白边原图 | 0.7402 |
+| 原版FusionAttention融合模型 | `models/formal/fusion-attention/dualbackbone-fusionattention-obb/weights` | `result/fusionattention-only-120epoch` | 有白边原图 | 0.6242 |
+| FeatureAttentionConcat（FA-Concat）型融合模型 | `models/formal/dualbackbone-FA-Concat-obb/weights` | `result/dualbackbone-FA-Concat-100epoch` | 有白边原图 | 0.6647 |
+| 完整YOLO neck结构的FA-Concat模型 | `models/formal/FA-Concat-FPN-PAN-neck/weights` | `result/FA-Concat-FPN-PAN-neck-100epoch` | 裁切白边 | 0.7297 |
+| 跨模态注意力融合的CM-FA-Concat模型 | `models/formal/CM-FA-Concat-FPN-PAN-neck/weights` | `result/CM-FA_FPN-PAN_neck` | 裁切白边 | 0.7177 |
+| 主干权重迁移训练的FA-Concat_FPN-PAN_tuned | `models/posttrain/FA-Concat_FPN-PAN_tuned/weights` | `result/FA-Concat_FPN-PAN_tuned` | 裁切白边 | 0.7617 |
+| 高分辨率微调模型（基于FA-Concat_FPN-PAN_tuned） | `models/posttrain/Final_Polish_800_FlipScale/weights` | `result/Final_Polish_800_FlipScale` | 裁切白边 | 0.7445 |
+| 正则化与难样本挖掘微调模型（基于FA-Concat_FPN-PAN_tuned） | `models/posttrain/Final_Recall_640_Regularized/weights` | `result/Final_Recall_640_Regularized` | 裁切白边 | 0.7456 |
+
+### 最终多模型结果汇总（7模型×6维）
+
+| 模型代号 | 模型名称 | mAP50 | mAP95 | Recall | Precision | FPS | 收敛效率 |
+| :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- |
+| M0 | IR-YOLOv8n | 0.66190 | 0.50329 | 0.62199 | 0.67828 | 166.45462 |  4.34783 |
+| M1 | Dual-Easy-Concat | 0.66325 | 0.53292 | 0.63298 | 0.66060 | 127.74533 |  3.12500 |
+| M2 | Dual-FA-Concat(without neck) | 0.66469 | 0.53631 | 0.64618 | 0.66124 | 121.81166 | 4.16667 |
+| M3 | FA-Concat (Scratch) | 0.72973 | 0.58864 | 0.67730 | 0.74700 | 117.89529 | 7.14286 |
+| M4 | CM-FA (Scratch) | 0.71774 | 0.57613 | 0.67340 | 0.73448 | 118.41942 | 7.69231 |
+| M5 | FA-Concat (Tuned) | 0.76170 | 0.61536 | 0.70353 | 0.78526 | 114.69225 | 12.50000 |
+| M6 | FA-Concat (Reg) | 0.74563 | 0.60353 | 0.70054 | 0.76284 | 109.52974 | 100.00000 |
+
+> 数据来源：`result/多模型结果汇总.csv`（由 `src/tools/build_summary_table.py` 自动生成），速度基准由 `src/testing/benchmark_speed_subset.py` 测得。
+
 **白边裁切与预览**
 
  - 白边裁切工具：`src/dataset_preprocess/crop_white_borders.py`
@@ -168,10 +220,10 @@
 
 ## 参考与附属记录
 - `yolo-fuse/` 目录：**作为参考与范例，不直接参与本项目训练**；其中包含多模态融合模块与配置，可用于对照研究
-- `yolo-fuse/`研究记录：`yolo_fuse_invest.md`（融合方法调研摘要）
+- yolo-fuse 研究记录：参见 [yolo-fuse/README.md](yolo-fuse/README.md)（融合方法调研摘要）
 - Conda 激活命令位于：`start-conda`
 - `ultralytics-8.2/` 目录下的docs包含可以参阅的文档
-- FusionAttention 模块实施手册：`FusionAttention模块实施手册.md`
+- FusionAttention 模块实施手册：[FusionAttention模块实施手册.md](FusionAttention模块实施手册.md)
 
 
 ### 环境搭建（基于 ultralytics-8.2，推荐稳定路径）
@@ -215,40 +267,73 @@
 
 ```
 YOLO-Fusion-UA-Lite/
+├─ data/
+│  ├─ train/ val/ test/
+│  ├─ classes.txt
+│  ├─ mismatch_obb.txt
+│  └─ 数据集预处理逻辑.md
+├─ data_croped/
+│  └─ .gitkeep
 ├─ models/
+│  ├─ IR-YOLOv8n/
+│  │  └─ from_scrach/train/weights/
 │  ├─ baseline/
-│  └─ formal/
+│  ├─ formal/
+│  │  ├─ dualbackbone-easy-obb-formal6/
+│  │  ├─ dualbackbone-FA-Concat-obb/
+│  │  ├─ FA-Concat-FPN-PAN-neck/
+│  │  └─ CM-FA-Concat-FPN-PAN-neck/
+│  ├─ fusion-attention/
+│  ├─ migratory/
+│  └─ posttrain/
+│     ├─ FA-Concat_FPN-PAN_tuned/
+│     ├─ Final_Polish_800_FlipScale/
+│     ├─ Final_Recall_640_Regularized/
+│     └─ Final_Recall_640_Regularized_val_on_test/
+├─ result/
+│  ├─ baseline-100epoch/ … predictions.json
+│  ├─ IR-YOLOv8n/ … 指标图片/CSV/JSON
+│  ├─ dualbackbone-FA-Concat-100epoch/ …
+│  ├─ FA-Concat-FPN-PAN-neck-100epoch/ …
+│  ├─ CM-FA_FPN-PAN_neck/ …
+│  ├─ FA-Concat_FPN-PAN_tuned/ … confusion_matrix*.png
+│  ├─ Final_Polish_800_FlipScale/ …
+│  ├─ Final_Recall_640_Regularized/ …
+│  ├─ benchmark_speed_subset.csv
+│  ├─ 多模型结果汇总.csv
+│  ├─ 训练曲线.png
+│  └─ radar_chart_final.png
 ├─ src/
 │  ├─ cfg/
-│  │  ├─ datasets/
-│  │  │  ├─ dual_obb_dronevehicle.yaml
-│  │  │  └─ dual_obb_sample.yaml
-│  │  └─ model/
-│  │     └─ dualbackbone_easy_obb.yaml
+│  │  ├─ datasets/dual_obb_dronevehicle.yaml 等
+│  │  └─ model/dualbackbone_easy_obb.yaml 等
 │  ├─ dataset_preprocess/
-│  │  ├─ preprocess_obb.py
-│  │  ├─ verify_obb_preview.py
-│  │  ├─ crop_white_borders.py
-│  │  └─ clean_mismatch.py
-│  └─ trainning/
-│     ├─ baseline_quick_train.py
-│     └─ train_formal.py
+│  ├─ trainning/
+│  ├─ testing/
+│  └─ tools/
 ├─ ultralytics-8.2/
-│  ├─ ultralytics/
-│  │  ├─ data/      （数据集与变换：augment/base/build/dataset/...）
-│  │  ├─ engine/    （trainer/validator/predictor/...）
-│  │  ├─ models/    （yolo/obb 等任务模块）
-│  │  ├─ nn/        （modules/tasks/autobackend/...）
-│  │  ├─ utils/     （工具与回调）
-│  │  ├─ trackers/  （跟踪相关模块）
-│  │  ├─ hub/       （Hub 集成）
-│  │  └─ solutions/ （示例解决方案）
-│  ├─ docs/         （官方文档与参考）
-│  ├─ tests/        （单元与集成测试）
-│  └─ examples/     （示例工程）
-├─ start-conda      （Conda 激活脚本）
+│  ├─ ultralytics/ …（框架源码）
+│  ├─ docs/
+│  ├─ examples/
+│  └─ README.zh-CN.md
+├─ log.md
+├─ start-conda
 └─ .gitignore
 ```
+
+### 文档目录（按时间先后）
+
+- [data/数据集预处理逻辑.md](data/数据集预处理逻辑.md)：数据清洗与 OBB 标签统一流程，含双阶段几何匹配与白边裁切规范（裁切元数据 `crop_meta.json`）。
+- [val_memory_analysis.md](val_memory_analysis.md)：验证集显存爆炸原因分析，最终改用 CPU 计算 NMS 的 IOU。
+- [FusionAttention模块实施手册.md](FusionAttention模块实施手册.md)：FusionAttention 的设计与实现，FA‑Concat/CM‑FA‑Concat 的升级路径与训练/评估建议。
+- [cuDNN_STATUS_EXECUTION_FAILED_训练错误排查与解决.md](cuDNN_STATUS_EXECUTION_FAILED_训练错误排查与解决.md)：训练时 cuDNN 执行失败的成因与修复路径，含稳定性调试建议。
+- [Neck_Construction_Guide.md](Neck_Construction_Guide.md)：完整 YOLOv8 FPN+PAN 颈部结构的插入方法与 YAML 配置指南。
+- [FA-Concat-neck权重迁移训练和深度调优手册.md](FA-Concat-neck权重迁移训练和深度调优手册.md)：COCO 预训练权重的双主干映射与热启动训练策略，含 Dropout/Mosaic 课程控制与超参表。
+- [FA-Concat_neck_tuned最终高分辨率微调.md](FA-Concat_neck_tuned最终高分辨率微调.md)：高分辨率（800）微调实施手册与参数设定、预期与验证注意事项。
+- [提升recall的最终微调.md](提升recall的最终微调.md)：正则化与损失重加权的难样本挖掘策略，总结统一测试标准与实施要点。
+- [双模态 YOLO-OBB 模型调参优化与策略分析报.md](双模态 YOLO-OBB 模型调参优化与策略分析报.md)：两阶段微调（高分辨率/正则化）结果与失败归因分析、后续改进方向建议。
+- [多模型性能评估与可视化实施文档.md](多模型性能评估与可视化实施文档.md)：最终 7 模型 × 6 维指标评估方案，含速度基准脚本 `src/testing/benchmark_speed_subset.py`、数据汇总 `result/多模型结果汇总.csv` 与雷达图脚本 `src/tools/plot_radar_final.py`。
+
 
 ### Git 状态同步记录 (2025-11-19)
 

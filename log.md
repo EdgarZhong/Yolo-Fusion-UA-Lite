@@ -1,3 +1,9 @@
+### 2025-12-6 变更记录（可视化与评估工具修正）
+- 完成混淆矩阵可视化工具参数对齐与增强：`src/tools/build_confusion_matrix_best.py` 新增 `--conf/--test-aug`，默认统一测试标准 `imgsz=640/conf=0.25/iou=0.75/max_det=1000`，避免因置信度过低导致 NMS 候选爆炸与超时。
+- 产物更新：生成 `FA-Concat_FPN-PAN_tuned` 的混淆矩阵双图（非归一化与按列归一化），保存至 `result/FA-Concat_FPN-PAN_tuned/confusion_matrix.png` 与 `result/FA-Concat_FPN-PAN_tuned/confusion_matrix_normalized.png`，用于快速诊断类别间混淆与召回瓶颈。
+- 文档完善：README 新增“混淆矩阵工具”章节，并更新“项目目录结构/文档目录”为相对链接，便于 GitHub 跳转与检索。
+- 结论与影响：显式传入阈值后评估耗时恢复正常；与通用测试脚本参数完全一致，评估结果可复现、可对比。
+
 ## 阶段四工作记录（最终微调：高分辨率与正则化）
 
 ### 2025-12-5 变更记录（最终微调 Phase I：高分辨率特征探索）
