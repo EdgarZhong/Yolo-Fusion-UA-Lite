@@ -571,6 +571,22 @@ class BaseTrainer:
             val_path = data.get("test") or data.get("val")
         else:
             val_path = data.get("val") or data.get("test")
+            
+        # [Custom] add_val_to_train: 将验证集并入训练集
+        if getattr(self.args, "add_val_to_train", False):
+            if isinstance(data["train"], str):
+                data["train"] = [data["train"]]
+            if isinstance(val_path, str):
+                val_path_list = [val_path]
+            else:
+                val_path_list = val_path if isinstance(val_path, list) else []
+                
+            # 避免重复添加
+            for vp in val_path_list:
+                if vp not in data["train"]:
+                    data["train"].append(vp)
+            LOGGER.info(f"[Data] 'add_val_to_train' is True. Merging Validation Set into Training Set: {data['train']}")
+
         return data["train"], val_path
 
     def setup_model(self):

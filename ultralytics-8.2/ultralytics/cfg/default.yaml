@@ -40,11 +40,15 @@ overlap_mask: True # (bool) masks should overlap during training (segment train 
 mask_ratio: 4 # (int) mask downsample ratio (segment train only)
 # Classification
 dropout: 0.0 # (float) use dropout regularization (classify train only)
+drop_prob_rgb: 0.0 # (float) RGB modality dropout probability
+drop_prob_ir: 0.0 # (float) IR modality dropout probability
+close_dropout: 10 # (int) disable modality dropout for final epochs (0 to disable)
 
 # Val/Test settings ----------------------------------------------------------------------------------------------------
 val: True # (bool) validate/test during training
 split: val # (str) dataset split to use for validation, i.e. 'val', 'test' or 'train'
 use_test_as_val: False # (bool) 自定义：训练阶段强制使用测试集作为验证集（每轮）
+add_val_to_train: False # (bool) 自定义：如果开启，则将验证集加入训练
 save_json: False # (bool) save results to JSON file
 save_hybrid: False # (bool) save hybrid version of labels (labels + additional predictions)
 conf: # (float, optional) object confidence threshold for detection (default 0.25 predict, 0.001 val)

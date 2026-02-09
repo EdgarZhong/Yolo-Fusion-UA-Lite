@@ -40,6 +40,7 @@ MODEL_DIRS: List[str] = [
     "posttrain/FA-Concat_FPN-PAN_tuned",
     # "posttrain/Final_Polish_800_FlipScale",
     "posttrain/Final_Recall_640_Regularized_val_on_test",
+    "posttrain/CM-FA-Transferred-3",
     # 可追加其他目录，例如："formal/baseline/dualbackbone-obb"
 ]
 

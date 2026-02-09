@@ -1,13 +1,14 @@
 # YOLO-Fusion-UA-Lite
 
-**最终目标：** 构建一个在DroneVehicle数据集上表现优异的、轻量级的YOLOv8-based OBB任务双模态融合检测模型
+**最终目标：** 构建一个在DroneVehicle数据集上表现优异的、轻量级的YOLO-based OBB任务双模态融合检测模型
+**通过吸取最新论文成果，进行架构与方法创新，进一步提高轻量级模型的精度效果**
 
 **技术栈：**
 
 *   **环境：** mini-conda（在 PowerShell 先执行 `start-conda` 中的命令以启用） + Python 3.12
 *   **框架：** PyTorch
 *   **基础模型：** YOLOv8（固定使用本仓库随附的 `ultralytics-8.2` 源码）
-*   **硬件：** 支持 CUDA 的 NVIDIA GPU（驱动版本需匹配 12.4 运行库）
+*   **硬件：** 支持 CUDA 的 NVIDIA GPU（驱动版本需匹配 12.4 运行库）,目前使用RTX4060（8GB显存）
 *   **核心数据集：** DroneVehicle
 
 ## **双模态有向目标检测模型开发与验证实践路径**
@@ -93,6 +94,34 @@
 *   **目标：** 挖掘最强模型的最后潜力。
 *   **方案：** 见双模态 YOLO-OBB 模型调参优化与策略分析报告。
 
+### **阶段五：重启与鲁棒性优化 (Phase 5: Restart & Robustness Optimization)**
+
+**背景：**
+项目重启后，通过摸底测试发现现有最佳模型（M5）在红外（IR）模态丢失时，mAP 暴跌约 35%（0.778 -> 0.506）。虽然 DroneVehicle 数据集中 IR 图像质量普遍优于 RGB，模型依赖高质量模态属于合理行为，且 IR 缺失导致精度大幅下降符合预期；但这也反映出模型并未充分挖掘 RGB 模态的互补信息，仍有通过架构优化进一步提升精度的空间。
+**修正**：经尝试，直接从 M5 模型迁移权重不可行。因此调整策略为模仿 M5 的训练流程，重新进行全量训练。
+
+在此基础上，将“验证 CM-FA 模块的精度与稳定性优势”作为本阶段的具体验证目标，力求在实现极致精度的同时，兼顾模态缺失场景下的鲁棒性（双强互补，单强可用）。
+
+**实施计划：**
+
+1.  **基线摸底与归因分析：**
+    *   使用 `test_stability.py` 对现有模型进行模态缺失测试，量化依赖程度。
+    *   结论：RGB 特征提取能力未被有效激活，需强制模型学习 RGB 特征。
+
+2.  **增强型模态随机失活 (Enhanced Modality Dropout)：**
+    *   **策略：** 在训练过程中以 20% 概率随机丢弃 RGB 或 IR（互斥，防止全黑）。
+    *   **目的：** 制造“模态缺失”的训练场景，迫使网络在单一模态下也能完成检测。
+    *   **动态关闭：** 在训练的最后阶段（如最后 20 Epoch）自动关闭此增强，让模型在完整双模态数据上进行最终拟合。
+
+3.  **全量重训练 (Full Retraining with COCO Transfer)：**
+    *   **模型架构：** 采用 CM-FA-Concat（跨模态注意力），引入 Cross-Modal SE 模块实现动态权重分配。
+    *   **权重初始化：加载 COCO 预训练的 YOLOv8n 权重**作为 Backbone 初始化（模仿 M5 的训练起点）。
+    *   **训练策略：** 复用 M5 的成功经验，包括超参数、数据增强策略等。
+    *   **泛化导向** ：在全量训练过程中，直接验证模型在整个测试集上的泛化能力。
+
+4.  **最终验证：**
+    *   训练结束后，再次运行稳定性测试，对比 mAP 下降幅度。
+
 ## 项目核心信息
 
 ### 进度情况
@@ -100,18 +129,32 @@
    **阶段二：已完成**（FusionAttention/FA‑Concat/CM‑FA‑Concat 模块实现与验证）
    **阶段三：已完成**（FPN/PAN 颈部结构补全与统一评估脚本）
    **阶段四：已完成**（最终微调：高分辨率探索与正则化难样本挖掘）
-   当前状态：项目实施告一段落，模型与评估体系稳定。统一测试标准：`imgsz=640`、`conf=0.25`、`iou=0.75`、`max_det=1000`，并支持 `use_test_as_val=True` 在训练期以测试集做验证。
+   **阶段五：进行中**（重启与鲁棒性优化：解决 IR 单模态依赖问题）
+   当前状态：项目重启，专注于提升模型在模态缺失场景下的鲁棒性。统一测试标准：`imgsz=640`、`conf=0.25`、`iou=0.75`、`max_det=300`，并支持 `use_test_as_val=True` 在训练期以测试集做验证。
 
-### 重要约定（更新）
+### 重要约定
 - 任务类型：YOLO‑OBB（旋转框检测），标签为 6 列格式 `class cx cy w h angle`（归一化，角度为弧度），样例见 `data/train/trainlabels_yolo_obb/00001.txt`
 - 输入模态与顺序约定：
   - 目录命名：`data/<subset>/<subset>img` 存放 RGB，`data/<subset>/<subset>imgr` 存放 IR，`data/<subset>/<subset>labels_yolo_obb` 存放适用于 OBB 任务的 6 列标签。
   - 模态顺序：始终为 “1: img(RGB), 2: imgr(IR)”；两个模态均为三通道输入。
-- 分辨率策略 **（采用data/下的未裁切数据集）**：训练阶段使用 `imgsz=832` 且 `rect=False`（开启随机打乱，`mosaic=0`），不进行任何裁切或标签重计算；验证与测试阶段使用 `imgsz=832` 且 `rect=True`，不做其它操作。
-- 数据增强 **（采用data/下的未裁切数据集）**：默认禁用（mosaic/mixup/copy_paste/erasing/flip/HSV 等均关闭），保证原生分布
 
 - 分辨率策略 **（采用data_croped/下的裁切掉白边的数据集）**：训练阶段使用 `imgsz=640` 且 `rect=False`（开启随机打乱），验证与测试阶段使用 `imgsz=640` 且 `rect=True` 保持 640×512 的矩形分桶。
-- 数据增强 **（采用data_croped/下的裁切掉白边的数据集）**：正式训练开启 `mosaic=1.0`，其余增强（mixup/copy_paste/erasing/flip/HSV 等）保持关闭，保证主分布稳定；验证阶段不使用增强。
+- 数据增强 **（采用data_croped/下的裁切掉白边的数据集）**：正式训练开启 `mosaic=1.0`，颜色增强保持关闭，保证IR图像数据分布符合真实情况；验证阶段不使用增强。
+- 模态随机失活（Modality Dropout）：
+  - **机制**：在训练过程中，以一定概率随机将 RGB 或 IR 通道的所有像素值置为 0，迫使模型学习不依赖单一模态的特征。
+  - **策略**：
+    - **互斥逻辑**：确保不会同时丢弃两个模态（防止输入全黑）。
+    - **概率设定**：默认单模态丢弃概率为 0.2（即 20% 概率丢 RGB，20% 概率丢 IR，60% 概率保留双模态）。
+    - **动态关闭**：在训练的最后阶段（如最后 10 Epoch）自动关闭此增强，让模型在完整双模态数据上进行最终拟合。
+  - **用法**：已完全集成至 `ultralytics` 框架源码 (`models/yolo/detect/train.py`)，直接通过训练参数控制，不再依赖外部 Hook 脚本，实现了训练脚本与框架功能的解耦。
+- **新增训练参数**（直接在 `model.train()` 中传递）：
+  - `use_test_as_val=True`：在训练期间直接使用测试集（test）作为验证集，以获得更真实的泛化性能反馈。
+  - `add_val_to_train=True`：当启用 `use_test_as_val` 时，脚本会自动将原验证集（val）合并到训练集（train）中参与训练，最大化利用数据（17789+1445 -> 19234 样本）。
+  - `drop_prob_rgb=0.2`：RGB 模态随机失活概率。
+  - `drop_prob_ir=0.2`：IR 模态随机失活概率。
+  - `close_dropout=10`：在训练结束前 N 个 Epoch 关闭模态失活增强，确保最终收敛稳定性。
+- **测试参数统一**
+  - `imgsz=640`、`conf=0.25`、`iou=0.75`、`max_det=300`
 
 ### 环境与激活
 
@@ -142,12 +185,9 @@
 
 ### 训练与验证（更新）
 
- - **基线模型务必存放在 `models/baseline/` 目录中**
- - 快速验证脚本：`src/trainning/baseline_quick_train.py`（单轮次训练，`fraction=0.05`，`imgsz=832`，训练 `rect=False`，验证/测试 `rect=True`）
- - **FusionAttention 模型务必存放在 `models/fusion-attention/` 目录中**
- - 快速训练验证脚本：`src/trainning/fusion_attention_quick_train.py`（单轮次训练，`fraction=0.05`，`imgsz=832`，训练 `rect=False`，验证/测试 `rect=True`）
- - 正式训练脚本：`src/trainning/train_formal.py`（宏统一；`imgsz=640`，训练 `rect=False`；验证 `rect=True`；开启 `mosaic=1.0`）
- - 数据集 YAML 已切换至裁切后目录：`src/cfg/datasets/dual_obb_dronevehicle.yaml` 的 `train/val/test` 指向 `data_croped/<subset>/<subset>img`
+ - **目录约定**
+ - 快速验证脚本：如果进行全量训练，需要编写冒烟测试脚本，确保模型在训练过程中能正常运行。如 `src/trainning/fa_concat_fpn_pan_quick_train.py`（fraction=0.05）。
+ - **数据集 YAML 已切换至裁切后目录：** `src/cfg/datasets/dual_obb_dronevehicle.yaml` 的 `train/val/test` 指向 `data_croped/<subset>/<subset>img`
  - 验证脚本统一为 `imgsz=640` 与 `rect=True`，保持 640×512 输入：`src/testing/test_general.py:51`
 
 ### 测试脚本：`src/testing/test_general.py` 用法
@@ -186,7 +226,7 @@
 | 高分辨率微调模型（基于FA-Concat_FPN-PAN_tuned） | `models/posttrain/Final_Polish_800_FlipScale/weights` | `result/Final_Polish_800_FlipScale` | 裁切白边 | 0.7445 |
 | 正则化与难样本挖掘微调模型（基于FA-Concat_FPN-PAN_tuned） | `models/posttrain/Final_Recall_640_Regularized/weights` | `result/Final_Recall_640_Regularized` | 裁切白边 | 0.7456 |
 
-### 最终多模型结果汇总（7模型×6维）
+### 多模型结果汇总（7模型×6维）
 
 | 模型代号 | 模型名称 | mAP50 | mAP95 | Recall | Precision | FPS | 收敛效率 |
 | :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- |
@@ -219,11 +259,9 @@
   - 训练阶段为 `imgsz=832` 且 `rect=False`（批次随机打乱）；验证/测试阶段为 `imgsz=832` 且 `rect=True`（按长宽比分桶，自动关闭 shuffle）。不再使用矩形尺寸对（如 `[704,832]`），以避免任何隐性裁切与标签调整。
 
 ## 参考与附属记录
-- `yolo-fuse/` 目录：**作为参考与范例，不直接参与本项目训练**；其中包含多模态融合模块与配置，可用于对照研究
-- yolo-fuse 研究记录：参见 [yolo-fuse/README.md](yolo-fuse/README.md)（融合方法调研摘要）
 - Conda 激活命令位于：`start-conda`
 - `ultralytics-8.2/` 目录下的docs包含可以参阅的文档
-- FusionAttention 模块实施手册：[FusionAttention模块实施手册.md](FusionAttention模块实施手册.md)
+- 各进度阶段的文档记录见下方表格
 
 
 ### 环境搭建（基于 ultralytics-8.2，推荐稳定路径）
@@ -261,7 +299,7 @@
 
 - 丢弃：直接依赖 `site-packages` 中的高版本 `ultralytics (8.3.x)`，以及在训练阶段对库进行猴子补丁的方案。
 - 最新实践：将 `ultralytics-8.2` 作为稳定基础，按上述步骤在独立环境中以可编辑模式安装；可以直接修改本地源码，确保可控与可复现。
-- 谨记：实际使用的框架源码位于：`ultralytics-8.2/ultralytics`。`yolo-fuse`目录仅作参考，未验证其直接运行的可行性
+- 谨记：实际使用的框架源码位于：`ultralytics-8.2/ultralytics`。
 
 ### 项目目录结构（目录树）
 
@@ -291,6 +329,7 @@ YOLO-Fusion-UA-Lite/
 │     ├─ Final_Recall_640_Regularized/
 │     └─ Final_Recall_640_Regularized_val_on_test/
 ├─ result/
+│  ├─ result_modal_dropout/ … [新增] 模态随机失活稳定性摸底结果
 │  ├─ baseline-100epoch/ … predictions.json
 │  ├─ IR-YOLOv8n/ … 指标图片/CSV/JSON
 │  ├─ dualbackbone-FA-Concat-100epoch/ …
@@ -316,7 +355,8 @@ YOLO-Fusion-UA-Lite/
 │  ├─ docs/
 │  ├─ examples/
 │  └─ README.zh-CN.md
-├─ log.md
+├─ docs/
+│  └─ ... (文档)
 ├─ start-conda
 └─ .gitignore
 ```
@@ -324,23 +364,14 @@ YOLO-Fusion-UA-Lite/
 ### 文档目录（按时间先后）
 
 - [data/数据集预处理逻辑.md](data/数据集预处理逻辑.md)：数据清洗与 OBB 标签统一流程，含双阶段几何匹配与白边裁切规范（裁切元数据 `crop_meta.json`）。
-- [val_memory_analysis.md](val_memory_analysis.md)：验证集显存爆炸原因分析，最终改用 CPU 计算 NMS 的 IOU。
-- [FusionAttention模块实施手册.md](FusionAttention模块实施手册.md)：FusionAttention 的设计与实现，FA‑Concat/CM‑FA‑Concat 的升级路径与训练/评估建议。
-- [cuDNN_STATUS_EXECUTION_FAILED_训练错误排查与解决.md](cuDNN_STATUS_EXECUTION_FAILED_训练错误排查与解决.md)：训练时 cuDNN 执行失败的成因与修复路径，含稳定性调试建议。
-- [Neck_Construction_Guide.md](Neck_Construction_Guide.md)：完整 YOLOv8 FPN+PAN 颈部结构的插入方法与 YAML 配置指南。
-- [FA-Concat-neck权重迁移训练和深度调优手册.md](FA-Concat-neck权重迁移训练和深度调优手册.md)：COCO 预训练权重的双主干映射与热启动训练策略，含 Dropout/Mosaic 课程控制与超参表。
-- [FA-Concat_neck_tuned最终高分辨率微调.md](FA-Concat_neck_tuned最终高分辨率微调.md)：高分辨率（800）微调实施手册与参数设定、预期与验证注意事项。
-- [提升recall的最终微调.md](提升recall的最终微调.md)：正则化与损失重加权的难样本挖掘策略，总结统一测试标准与实施要点。
-- [双模态 YOLO-OBB 模型调参优化与策略分析报.md](双模态 YOLO-OBB 模型调参优化与策略分析报.md)：两阶段微调（高分辨率/正则化）结果与失败归因分析、后续改进方向建议。
-- [多模型性能评估与可视化实施文档.md](多模型性能评估与可视化实施文档.md)：最终 7 模型 × 6 维指标评估方案，含速度基准脚本 `src/testing/benchmark_speed_subset.py`、数据汇总 `result/多模型结果汇总.csv` 与雷达图脚本 `src/tools/plot_radar_final.py`。
+- [val_memory_analysis.md](docs/val_memory_analysis.md)：验证集显存爆炸原因分析，最终改用 CPU 计算 NMS 的 IOU。
+- [FusionAttention模块实施手册.md](docs/FusionAttention模块实施手册.md)：FusionAttention 的设计与实现，FA‑Concat/CM‑FA‑Concat 的升级路径与训练/评估建议。
+- [cuDNN_STATUS_EXECUTION_FAILED_训练错误排查与解决.md](docs/cuDNN_STATUS_EXECUTION_FAILED_训练错误排查与解决.md)：训练时 cuDNN 执行失败的成因与修复路径，含稳定性调试建议。
+- [Neck_Construction_Guide.md](docs/Neck_Construction_Guide.md)：完整 YOLOv8 FPN+PAN 颈部结构的插入方法与 YAML 配置指南。
+- [FA-Concat-neck权重迁移训练和深度调优手册.md](docs/FA-Concat-neck权重迁移训练和深度调优手册.md)：COCO 预训练权重的双主干映射与热启动训练策略，含 Dropout/Mosaic 课程控制与超参表。
+- [FA-Concat_neck_tuned最终高分辨率微调.md](docs/FA-Concat_neck_tuned最终高分辨率微调.md)：高分辨率（800）微调实施手册与参数设定、预期与验证注意事项。
+- [提升recall的最终微调.md](docs/提升recall的最终微调.md)：正则化与损失重加权的难样本挖掘策略，总结统一测试标准与实施要点。
+- [双模态 YOLO-OBB 模型调参优化与策略分析报.md](docs/双模态 YOLO-OBB 模型调参优化与策略分析报.md)：两阶段微调（高分辨率/正则化）结果与失败归因分析、后续改进方向建议。
+- [多模型性能评估与可视化实施文档.md](docs/多模型性能评估与可视化实施文档.md)：最终 7 模型 × 6 维指标评估方案，含速度基准脚本 `src/testing/benchmark_speed_subset.py`、数据汇总 `result/多模型结果汇总.csv` 与雷达图脚本 `src/tools/plot_radar_final.py`。
+- [CM-FA 模块迁移训练与稳定性验证实施方案](docs/CM-FA_Transfer_and_Stability_Plan.md)：**[NEW]** 从最佳模型迁移训练 CM-FA 模块与稳定性验证实施方案。
 
-
-### Git 状态同步记录 (2025-11-19)
-
-- **事件**: 修复了本地与远程 `main` 分支的历史记录分叉问题。
-- **操作**:
-    1.  将远程 `main` 分支强制回滚至本地的稳定版本 (`CPU方法解决验证爆显存问题`)。
-    2.  将分叉前暂存的开发中工作 (`temp-analysis-stash`) 恢复至新的特性分支 `feature/gpu-validation-fix`。
-- **当前状态**:
-    - `main` 分支已与远程同步，处于稳定状态。
-    - `feature/gpu-validation-fix` 分支已创建，用于后续的使用 GPU 计算验证阶段爆显存相关问题的修复。

@@ -1,0 +1,14 @@
+names:
+- car
+- truck
+- bus
+- van
+- freight_car
+nc: 5
+path: D:/Code/DeepLearning/YOLO-Fusion-UA-Lite
+task: obb
+test: data_croped/test/testimg
+train:
+- data_croped/train/trainimg
+- data_croped/val/valimg
+val: data_croped/val/valimg

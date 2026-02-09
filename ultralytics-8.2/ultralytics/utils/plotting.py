@@ -1039,6 +1039,10 @@ def plot_images(
     mosaic = np.full((int(ns * h), int(ns * w), 3), 255, dtype=np.uint8)  # init
     for i in range(bs):
         x, y = int(w * (i // ns)), int(h * (i % ns))  # block origin
+        if images.shape[1] > 3:
+            images = images[:, :3, :, :]
+            # print("Warning: Plotting only first 3 channels")
+
         mosaic[y : y + h, x : x + w, :] = images[i].transpose(1, 2, 0)
 
     # Resize (optional)
