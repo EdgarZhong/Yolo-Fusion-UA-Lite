@@ -55,15 +55,22 @@ def main():
         # 输出目录与命名
         "project": str(ROOT / "models" / "fusion-attention"),
         "name": "dualbackbone-CM-FA-Concat-obb-quick",
-        "save": True,
+        "save": False,
         "val": True,
         "patience": 0,
         "plots": False,
         # 明确不在尾期关闭 mosaic（默认 10），设为 0 表示始终开启
         "close_mosaic": 0,
+        "max_det": 100,
     }
 
     trainer = OBBTrainer(overrides=overrides)
+
+    def on_val_start(_trainer):
+        print("[QuickCheck] 已进入验证阶段，结束冒烟检查")
+        raise SystemExit(0)
+
+    trainer.add_callback("on_val_start", on_val_start)
     trainer.train()
 
 

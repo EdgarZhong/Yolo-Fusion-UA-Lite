@@ -1,5 +1,6 @@
 
 import warnings
+import sys
 import torch
 import torch.nn as nn
 from ultralytics import YOLO
@@ -8,6 +9,39 @@ from ultralytics.utils import RANK
 
 # 导入增强型模态 Dropout Hook - 已集成到 Ultralytics 框架中，此处移除显式 Hook 注入
 # from modality_dropout_hook import inject_enhanced_modality_dropout
+
+def _root_dir() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+def get_run_dir() -> Path:
+    root = _root_dir()
+    project_dir = root / "models" / "posttrain"
+    name = "CM-FA-Transferred"
+    return project_dir / name
+
+def build_train_command() -> list[str]:
+    return [sys.executable, str(Path(__file__).resolve())]
+
+def build_resume_command() -> list[str]:
+    root = _root_dir()
+    run_dir = get_run_dir()
+    return [
+        sys.executable,
+        str(root / "src" / "trainning" / "resume_train.py"),
+        "--resume",
+        str(run_dir),
+        "--use-test-as-val",
+    ]
+
+def get_train_manager_spec() -> dict:
+    run_dir = get_run_dir()
+    return {
+        "name": "cm_fa_transfer",
+        "train_cmd": build_train_command(),
+        "resume_cmd": build_resume_command(),
+        "resume_ready": str(run_dir / "weights" / "last.pt"),
+        "workdir": str(_root_dir()),
+    }
 
 def transfer_weights(source_path, target_model):
     """
@@ -59,58 +93,15 @@ def transfer_weights(source_path, target_model):
         print(f"[Transfer] Skipped/Initialized {len(skipped_keys)} layers (Incompatible shapes or explicit skip).")
         # print(f"[Transfer] Example skipped: {skipped_keys[:5]}")
 
-def freeze_layers(model, freeze_mode='init'):
-    """
-    冻结策略：
-    - init: 冻结 Backbone (0-22) 和 Inception。解冻 CM-SE 和 Neck/Head (23+)。
-      (修正：原策略冻结 Neck/Head 导致特征不匹配无法收敛，必须解冻下游层以适配新特征)
-    - unfreeze: 解冻所有层
-    """
-    if freeze_mode == 'init':
-        print("[Freeze] Locking Backbone (0-22) & Inception. Training CM-SE and Neck/Head.")
-        
-        # 假设 model 是 DetectionModel，model.model 是 nn.Sequential
-        # 遍历所有层，根据索引判断是否为 Backbone
-        for i, m in enumerate(model.model):
-            # 0-22 为 Backbone (根据 YAML 配置)
-            if i <= 22:
-                # 冻结 Backbone
-                for param in m.parameters():
-                    param.requires_grad = False
-            else:
-                # 23+ 为 Neck/Head (包含 Fusion 层, FPN, PAN, Head)
-                # 默认解冻，允许下游层适配新的 Fusion 输出
-                for param in m.parameters():
-                    param.requires_grad = True
-                
-                # 对于 Fusion 层 (CrossModalFusionAttention)，特殊处理 Inception
-                # Inception 权重已迁移，建议冻结以保持特征提取稳定性
-                if hasattr(m, 'inc_rgb'): 
-                     for param in m.inc_rgb.parameters():
-                         param.requires_grad = False
-                if hasattr(m, 'inc_ir'):
-                     for param in m.inc_ir.parameters():
-                         param.requires_grad = False
-                
-                # 确保 cm_se 是解冻的 (它是新初始化的，必须训练)
-                if hasattr(m, 'cm_se'):
-                    for param in m.cm_se.parameters():
-                        param.requires_grad = True
-                        
-    elif freeze_mode == 'unfreeze':
-        print("[Freeze] Unfreezing all layers for fine-tuning.")
-        # 注意：model.named_parameters() 返回的是 (name, param) 元组
-        for name, param in model.named_parameters():
-            param.requires_grad = True
-
 def main():
     # -------------------------------------------------------------------------
     # 1. 配置路径
     # -------------------------------------------------------------------------
     ROOT = Path(__file__).resolve().parents[2] # YOLO-Fusion-UA-Lite/
     
-    # 源权重 (M5: FA-Concat-Tuned)
-    SOURCE_WEIGHTS = ROOT / "models" / "posttrain" / "FA-Concat_FPN-PAN_tuned" / "weights" / "best.pt"
+    # 源权重（官方 COCO 预训练权重，用于主干初始化）
+    # 说明：这里改为加载官方权重，避免再从 FA-Concat tuned 权重迁移
+    SOURCE_WEIGHTS = ROOT / "yolov8n.pt"
     
     # 目标配置
     TARGET_CFG = ROOT / "src" / "cfg" / "model" / "CM-FA_Concat_FPN-PAN_neck.yaml"
@@ -118,7 +109,7 @@ def main():
     
     # 输出目录
     PROJECT_DIR = ROOT / "models" / "posttrain"
-    NAME = "CM-FA-Transferred-3"
+    NAME = "CM-FA-Transferred"
     
     if not SOURCE_WEIGHTS.exists():
         raise FileNotFoundError(f"Source weights not found at: {SOURCE_WEIGHTS}")
@@ -138,91 +129,61 @@ def main():
     transfer_weights(SOURCE_WEIGHTS, model.model)
     
     # -------------------------------------------------------------------------
-    # 4. 定义训练回调 (Callbacks) 实现冻结策略
-    # -------------------------------------------------------------------------
-    def on_train_start(trainer):
-        # 初始阶段：仅训练 CM-SE
-        freeze_layers(trainer.model, freeze_mode='init')
-        
-    def on_train_epoch_start(trainer):
-        # 第 10 Epoch 解冻全网
-        if trainer.epoch == 10:
-            freeze_layers(trainer.model, freeze_mode='unfreeze')
-
-    model.add_callback("on_train_start", on_train_start)
-    model.add_callback("on_train_epoch_start", on_train_epoch_start)
-
-    # -------------------------------------------------------------------------
-    # 5. 注入增强型模态 Dropout
-    # -------------------------------------------------------------------------
-    # 模态 Dropout 现已集成到 ultralytics/models/yolo/detect/train.py 中
-    # 通过 model.train() 参数直接控制，不再需要 Hook 注入
-
-    # -------------------------------------------------------------------------
-    # 6. 启动训练
+    # 4. 启动训练（完全复刻历史最佳模型经验，迁移不启用冻结）
     # -------------------------------------------------------------------------
     
-    # 基础设置
+    # 基础设置（按你的要求启用测试集验证与验证集并入训练）
     USE_TEST_AS_VAL = True
     ADD_VAL_TO_TRAIN = True
 
-    # 参数复用 FA-Concat-Tuned 的成功经验
+    # 参数完全复刻 FA-Concat_FPN-PAN_tuned 的训练经验
     model.train(
-        data=DATA_YAML,
-        project=PROJECT_DIR,
-        name=NAME,
-        epochs=50,          # 修正：从 30 增加回 50
-                            # 原因：前 10 Epoch 处于"移植排异期"（Adaptation Phase），模型在努力适应新模块，
-                            # 性能处于低位。若仅训练 30 轮，留给全解冻后的微调时间仅 20 轮，可能导致欠拟合。
-                            # 50 轮能保证有充足的 fine-tuning 窗口。
-        batch=16,            # 显存允许下的 Batch
-        imgsz=640,          # 裁切数据标准尺寸
-        rect=False,         # 训练时不使用矩形 (因为是 640x512 裁切图，直接 resize 到 640 即可，或者 rect=False 配合多尺度)
-                            # 修正：之前经验是训练 rect=False, 验证 rect=True
-        
-        # 优化器与学习率
-        optimizer='SGD',
-        # 修正：LR0 从 0.002 提升至 0.005。
-        # 原因：前 10 Epoch 仅训练小参数量的 CM-SE 模块，0.002 导致收敛过慢（mAP~0.0006）。
-        # 0.005 能加速初期适配，配合 lrf=0.01 最终衰减至 5e-5，仍保证微调安全。
-        lr0=0.005,          
-        lrf=0.01,           
-        warmup_epochs=3.0,
-        
-        # 数据增强 (复用 FA-Concat-Tuned)
-        mosaic=1.0,         # 开启 Mosaic
-        mixup=0.0,
-        copy_paste=0.0,
-        degrees=0.0,        # OBB 敏感
-        translate=0.1,
-        scale=0.5,
-        fliplr=0.5,
-        hsv_h=0.0,          # 保持红外特征
-        hsv_s=0.0,
-        hsv_v=0.0,
-        
-        # 其他
-        workers=4,
-        close_mosaic=8,     # 修正：最后 8 epoch 关闭 Mosaic
-        device='0',
-        exist_ok=True,
-        save=True,
-        val=True,           # 训练中验证
-        max_det=200,        # 减小最大检测框数量
-        plots=True,
-        
-        # 强制使用测试集进行验证 (重要)
-        # 根据项目约定，use_test_as_val=True 会在训练期间使用测试集作为验证集
-        # 这通常需要修改过的 Ultralytics 源码支持，或者作为自定义参数传递给 Trainer
-        use_test_as_val=USE_TEST_AS_VAL,
-        
-        # [新增] 将验证集加入训练集
-        add_val_to_train=ADD_VAL_TO_TRAIN,
-        
-        # 模态随机失活 (Modality Dropout)
-        drop_prob_rgb=0.2,  # RGB 模态丢失概率
-        drop_prob_ir=0.2,   # IR 模态丢失概率
-        close_dropout=10    # 最后 10 epoch 关闭 Dropout
+        data=DATA_YAML,                      # 数据集配置
+        project=PROJECT_DIR,                 # 训练输出根目录
+        name=NAME,                           # 训练运行名称
+        epochs=160,                          # 总训练轮次，按你的要求设为 160
+        patience=0,                          # 关闭早停机制，严格按 160 轮完成
+        freeze=10,                           # 历史最佳策略：冻结前 10 轮 Backbone
+        batch=16,                            # 历史最佳模型批大小
+        imgsz=640,                           # 历史最佳模型输入尺寸
+        rect=False,                          # 历史最佳模型为非矩形训练
+        optimizer='SGD',                     # 历史最佳模型优化器
+        lr0=0.01,                            # 历史最佳模型初始学习率
+        lrf=0.01,                            # 历史最佳模型末端学习率比例
+        warmup_epochs=3.0,                   # 历史最佳模型 warmup 轮次
+        momentum=0.937,                      # 历史最佳模型动量
+        weight_decay=0.0005,                 # 历史最佳模型权重衰减
+        workers=2,                           # 历史最佳模型数据加载线程
+        deterministic=True,                  # 历史最佳模型确定性训练
+        seed=0,                              # 历史最佳模型随机种子
+        mosaic=1.0,                          # 按你的要求启用 Mosaic，并在最后 16 轮关闭
+        mixup=0.0,                           # 历史最佳模型关闭 MixUp
+        copy_paste=0.0,                      # 历史最佳模型关闭 Copy-Paste
+        degrees=0.0,                         # 历史最佳模型旋转增强关闭
+        translate=0.1,                       # 历史最佳模型平移增强
+        scale=0.5,                           # 历史最佳模型缩放增强
+        shear=0.0,                           # 历史最佳模型剪切增强关闭
+        perspective=0.0,                     # 历史最佳模型透视增强关闭
+        fliplr=0.5,                          # 历史最佳模型水平翻转
+        flipud=0.0,                          # 历史最佳模型垂直翻转关闭
+        hsv_h=0.0,                           # 历史最佳模型 HSV-H 关闭
+        hsv_s=0.0,                           # 历史最佳模型 HSV-S 关闭
+        hsv_v=0.0,                           # 历史最佳模型 HSV-V 关闭
+        close_mosaic=16,                     # 最后 16 轮关闭 Mosaic（与总轮次 160 对齐）
+        device='0',                          # 训练设备
+        exist_ok=True,                       # 允许同名目录继续训练
+        save=True,                           # 保存权重
+        val=True,                            # 训练期验证开启
+        iou=0.75,                            # 按你的要求设置验证 NMS IoU=0.75
+        conf=0.25,                           # 按你的要求设置验证置信度阈值=0.25
+        max_det=300,                         # 历史最佳模型最大检测数
+        plots=False,                         # 历史最佳模型不绘图
+        # 迁移训练扩展参数（按你的要求启用）
+        use_test_as_val=USE_TEST_AS_VAL,     # 训练期使用测试集验证
+        add_val_to_train=ADD_VAL_TO_TRAIN,   # 将验证集并入训练集
+        drop_prob_rgb=0.2,                   # 模态随机失活：RGB 概率
+        drop_prob_ir=0.2,                    # 模态随机失活：IR 概率
+        close_dropout=16                     # 最后 16 轮关闭模态失活（与总轮次 160 对齐）
     )
 
 if __name__ == '__main__':

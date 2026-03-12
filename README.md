@@ -185,7 +185,6 @@
 
 ### 训练与验证（更新）
 
- - **目录约定**
  - 快速验证脚本：如果进行全量训练，需要编写冒烟测试脚本，确保模型在训练过程中能正常运行。如 `src/trainning/fa_concat_fpn_pan_quick_train.py`（fraction=0.05）。
  - **数据集 YAML 已切换至裁切后目录：** `src/cfg/datasets/dual_obb_dronevehicle.yaml` 的 `train/val/test` 指向 `data_croped/<subset>/<subset>img`
  - 验证脚本统一为 `imgsz=640` 与 `rect=True`，保持 640×512 输入：`src/testing/test_general.py:51`
