@@ -1,4 +1,5 @@
 import argparse
+import csv
 import importlib.util
 import os
 import subprocess
@@ -44,6 +45,15 @@ def normalize_spec(script_path: Path, module):
     resume_ready = spec.get("resume_ready")
     workdir = spec.get("workdir")
     name = spec.get("name") or script_path.stem
+    run_dir = spec.get("run_dir")
+    total_epochs = spec.get("total_epochs")
+
+    if run_dir is None and resume_ready:
+        resume_path = Path(resume_ready)
+        if resume_path.name == "last.pt" and resume_path.parent.name == "weights":
+            run_dir = resume_path.parent.parent
+        else:
+            run_dir = resume_path.parent
 
     return {
         "name": name,
@@ -51,7 +61,45 @@ def normalize_spec(script_path: Path, module):
         "resume_cmd": normalize_command(resume_cmd),
         "resume_ready": Path(resume_ready) if resume_ready else None,
         "workdir": Path(workdir) if workdir else ROOT,
+        "run_dir": Path(run_dir) if run_dir else None,
+        "total_epochs": int(total_epochs) if total_epochs is not None else None,
     }
+
+
+def read_last_epoch(results_csv: Path):
+    if not results_csv.exists():
+        return None
+    try:
+        with results_csv.open("r", newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            if not reader.fieldnames:
+                return None
+            epoch_key = None
+            for key in reader.fieldnames:
+                if key.lower() == "epoch":
+                    epoch_key = key
+                    break
+            if epoch_key is None:
+                return None
+            last_epoch = None
+            for row in reader:
+                value = row.get(epoch_key)
+                if value is None or value == "":
+                    continue
+                last_epoch = int(float(value))
+            return last_epoch
+    except Exception:
+        return None
+
+
+def is_completed(run_dir: Path | None, total_epochs: int | None) -> bool:
+    if run_dir is None or total_epochs is None:
+        return False
+    results_csv = run_dir / "results.csv"
+    last_epoch = read_last_epoch(results_csv)
+    if last_epoch is None:
+        return False
+    return (last_epoch + 1) >= total_epochs
 
 
 def main():
@@ -60,7 +108,7 @@ def main():
     parser.add_argument("--max-retries", type=int, default=100)
     parser.add_argument("--cooldown", type=int, default=5)
     parser.add_argument("--check-interval", type=float, default=2.0)
-    parser.add_argument("--no-launch-blocking", action="store_true")
+    parser.add_argument("--launch-blocking", action="store_true")
     args = parser.parse_args()
 
     script_path = Path(args.script)
@@ -71,14 +119,25 @@ def main():
     spec = normalize_spec(script_path, module)
 
     env = os.environ.copy()
-    if not args.no_launch_blocking:
+    if args.launch_blocking:
         env["CUDA_LAUNCH_BLOCKING"] = "1"
 
     attempt = 0
     while True:
-        use_resume = attempt > 0 and spec["resume_cmd"] is not None
-        if use_resume and spec["resume_ready"] is not None and not spec["resume_ready"].exists():
-            use_resume = False
+        completed = is_completed(spec["run_dir"], spec["total_epochs"])
+        if completed:
+            print(f"[TrainManager] run_dir={spec['run_dir']} 已完成训练，退出")
+            break
+
+        resume_ready = spec["resume_ready"]
+        can_resume = resume_ready is not None and resume_ready.exists() and spec["resume_cmd"] is not None
+
+        use_resume = False
+        if attempt == 0:
+            use_resume = can_resume
+        else:
+            use_resume = can_resume
+
         cmd = spec["resume_cmd"] if use_resume else spec["train_cmd"]
 
         print(f"[TrainManager] name={spec['name']}, attempt={attempt}, mode={'resume' if use_resume else 'train'}")

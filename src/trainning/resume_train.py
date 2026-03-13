@@ -7,8 +7,6 @@
 - 保持验证器关键参数与双模态训练一致以便对比（如 iou/conf/max_det 等保持默认一致）。
 - 仅允许覆盖 `imgsz/batch/device/freeze` 四项以便迁移与资源调整，其余参数从检查点恢复。
 """
-import os
-os.environ['CUDA_LAUNCH_BLOCKING'] = '1' # 开启 CUDA 调试模式，及时捕获异常
 import argparse
 import sys
 from pathlib import Path
@@ -131,7 +129,7 @@ def extract_prev_args(ckpt_pt: Path) -> dict:
 
 
 def main():
-    """启动断点续训：只设置 resume，其他参数交由检查点恢复，必要时允许覆盖 imgsz/batch/device。"""
+    """启动断点续训：仅透传 resume，其余参数完全由检查点恢复。"""
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--resume",
@@ -139,11 +137,6 @@ def main():
         default=str(default_resume_path()),
         help="断点路径：可传运行目录或具体 last.pt 文件；默认为上次正式训练目录",
     )
-    parser.add_argument("--imgsz", type=int, default=None, help="可选覆盖：输入尺寸")
-    parser.add_argument("--batch", type=int, default=None, help="可选覆盖：批大小")
-    parser.add_argument("--device", type=str, default=None, help="可选覆盖：设备，如 '0'、'0,1' 或 'cpu'")
-    parser.add_argument("--freeze", type=int, default=0, help="可选覆盖：按层冻结前 N 层（设 0 关闭冻结）")
-    parser.add_argument("--use-test-as-val", action="store_true", help="训练阶段使用测试集作为验证集")
     args = parser.parse_args()
 
     # 解析实际 last.pt 文件并推断输入通道数
@@ -152,29 +145,8 @@ def main():
     prev_args = extract_prev_args(ckpt_pt)
 
     overrides = {
-        "task": "obb",
         "resume": str(ckpt_pt),
-        # 验证器关键参数（与 Recall 策略测试标准对齐）
-        "iou": 0.65,
-        "max_det": 1000,
-        "conf": 0.01,
-        "plots": False,
-        "val": True,
     }
-
-    # 自定义参数：训练阶段强制使用测试集作为验证集
-    if bool(args.use_test_as_val):
-        overrides["use_test_as_val"] = True
-
-    # 仅允许覆盖 imgsz/batch/device 三项（其余由检查点决定）
-    if args.imgsz is not None:
-        overrides["imgsz"] = args.imgsz
-    if args.batch is not None:
-        overrides["batch"] = args.batch
-    if args.device is not None:
-        overrides["device"] = args.device
-    if args.freeze is not None:
-        overrides["freeze"] = args.freeze
 
     # 运行信息提示
     print("[Resume][OBB] 断点续训启动：")
@@ -187,23 +159,8 @@ def main():
             f"lr0={prev_args.get('lr0')}, lrf={prev_args.get('lrf')}, mosaic={prev_args.get('mosaic')}, save_period={prev_args.get('save_period')}"
         )
 
-    # 强制开启验证和保存，确保 Loss 被计算和记录
-    overrides["save"] = True
-
-    if args.imgsz is not None:
-        print(f"override imgsz={args.imgsz}")
-    if args.batch is not None:
-        print(f"override batch={args.batch}")
-    if args.device is not None:
-        print(f"override device={args.device}")
-    if args.freeze is not None:
-        print(f"override freeze={args.freeze}")
-
     # 根据检查点架构自适配训练器：3通道→IR 单模态；6通道→双主干默认实现
     trainer = IR_OBB_Trainer(overrides=overrides) if in_ch == 3 else OBBTrainer(overrides=overrides)
-    # 由于 Ultralytics 的 check_resume 仅允许覆盖 imgsz/batch/device，这里在实例化后强制覆盖 freeze
-    if args.freeze is not None:
-        trainer.args.freeze = args.freeze
     trainer.train()
 
 

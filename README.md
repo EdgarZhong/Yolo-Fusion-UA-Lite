@@ -359,7 +359,7 @@ YOLO-Fusion-UA-Lite/
 ├─ start-conda
 └─ .gitignore
 ```
-
+ 
 ### 文档目录（按时间先后）
 
 - [data/数据集预处理逻辑.md](data/数据集预处理逻辑.md)：数据清洗与 OBB 标签统一流程，含双阶段几何匹配与白边裁切规范（裁切元数据 `crop_meta.json`）。

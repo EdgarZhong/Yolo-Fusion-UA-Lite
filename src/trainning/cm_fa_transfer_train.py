@@ -30,7 +30,6 @@ def build_resume_command() -> list[str]:
         str(root / "src" / "trainning" / "resume_train.py"),
         "--resume",
         str(run_dir),
-        "--use-test-as-val",
     ]
 
 def get_train_manager_spec() -> dict:
@@ -41,12 +40,14 @@ def get_train_manager_spec() -> dict:
         "resume_cmd": build_resume_command(),
         "resume_ready": str(run_dir / "weights" / "last.pt"),
         "workdir": str(_root_dir()),
+        "run_dir": str(run_dir),
+        "total_epochs": 160,
     }
 
 def transfer_weights(source_path, target_model):
     """
     执行权重迁移：
-    1. 加载源模型 (FA-Concat-Tuned)
+    1. 加载源模型 YOLOV8n
     2. 筛选并加载 Backbone, Neck, Head 和 Fusion.Inception
     3. 丢弃不兼容的 SE 权重，保留 CM-SE 为随机初始化
     """
