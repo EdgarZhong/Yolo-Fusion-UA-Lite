@@ -7,6 +7,15 @@ from ultralytics import YOLO
 from pathlib import Path
 from ultralytics.utils import RANK
 
+# 训练运行名，训练输出目录与 Train Manager 统一由此派生，避免手动维护两处
+RUN_NAME = "CM-FA-Transferred-220"
+# 总训练轮次，训练与 Train Manager 均由此读取，避免轮次不一致
+TOTAL_EPOCHS = 220
+# 训练尾期关闭 Mosaic/模态失活的轮次数，统一复用避免重复维护
+FINAL_CLOSE_EPOCHS = 30
+# 是否使用测试集作为验证集，统一为单一开关便于复现实验设置
+USE_TEST_AS_VAL = True
+
 # 导入增强型模态 Dropout Hook - 已集成到 Ultralytics 框架中，此处移除显式 Hook 注入
 # from modality_dropout_hook import inject_enhanced_modality_dropout
 
@@ -16,8 +25,7 @@ def _root_dir() -> Path:
 def get_run_dir() -> Path:
     root = _root_dir()
     project_dir = root / "models" / "posttrain"
-    name = "CM-FA-Transferred"
-    return project_dir / name
+    return project_dir / RUN_NAME
 
 def build_train_command() -> list[str]:
     return [sys.executable, str(Path(__file__).resolve())]
@@ -41,7 +49,7 @@ def get_train_manager_spec() -> dict:
         "resume_ready": str(run_dir / "weights" / "last.pt"),
         "workdir": str(_root_dir()),
         "run_dir": str(run_dir),
-        "total_epochs": 160,
+        "total_epochs": TOTAL_EPOCHS,
     }
 
 def transfer_weights(source_path, target_model):
@@ -109,8 +117,9 @@ def main():
     DATA_YAML = ROOT / "src" / "cfg" / "datasets" / "dual_obb_dronevehicle.yaml"
     
     # 输出目录
-    PROJECT_DIR = ROOT / "models" / "posttrain"
-    NAME = "CM-FA-Transferred"
+    RUN_DIR = get_run_dir()
+    PROJECT_DIR = RUN_DIR.parent
+    NAME = RUN_DIR.name
     
     if not SOURCE_WEIGHTS.exists():
         raise FileNotFoundError(f"Source weights not found at: {SOURCE_WEIGHTS}")
@@ -133,17 +142,13 @@ def main():
     # 4. 启动训练（完全复刻历史最佳模型经验，迁移不启用冻结）
     # -------------------------------------------------------------------------
     
-    # 基础设置（按你的要求启用测试集验证与验证集并入训练）
-    USE_TEST_AS_VAL = True
-    ADD_VAL_TO_TRAIN = True
-
     # 参数完全复刻 FA-Concat_FPN-PAN_tuned 的训练经验
     model.train(
         data=DATA_YAML,                      # 数据集配置
         project=PROJECT_DIR,                 # 训练输出根目录
         name=NAME,                           # 训练运行名称
-        epochs=160,                          # 总训练轮次，按你的要求设为 160
-        patience=0,                          # 关闭早停机制，严格按 160 轮完成
+        epochs=TOTAL_EPOCHS,                 # 总训练轮次，统一与 Train Manager 保持一致
+        patience=0,                          # 关闭早停机制
         freeze=10,                           # 历史最佳策略：冻结前 10 轮 Backbone
         batch=16,                            # 历史最佳模型批大小
         imgsz=640,                           # 历史最佳模型输入尺寸
@@ -170,21 +175,20 @@ def main():
         hsv_h=0.0,                           # 历史最佳模型 HSV-H 关闭
         hsv_s=0.0,                           # 历史最佳模型 HSV-S 关闭
         hsv_v=0.0,                           # 历史最佳模型 HSV-V 关闭
-        close_mosaic=16,                     # 最后 16 轮关闭 Mosaic（与总轮次 160 对齐）
+        close_mosaic=FINAL_CLOSE_EPOCHS,     # 末尾若干轮关闭 Mosaic，统一由配置常量控制
         device='0',                          # 训练设备
         exist_ok=True,                       # 允许同名目录继续训练
         save=True,                           # 保存权重
         val=True,                            # 训练期验证开启
         iou=0.75,                            # 按你的要求设置验证 NMS IoU=0.75
         conf=0.25,                           # 按你的要求设置验证置信度阈值=0.25
-        max_det=300,                         # 历史最佳模型最大检测数
-        plots=False,                         # 历史最佳模型不绘图
+        max_det=1000,                        # 增加最大检测数，以支持更多复杂高密度场景
+        plots=True,                          # 启用绘图，以便后续分析
         # 迁移训练扩展参数（按你的要求启用）
-        use_test_as_val=USE_TEST_AS_VAL,     # 训练期使用测试集验证
-        add_val_to_train=ADD_VAL_TO_TRAIN,   # 将验证集并入训练集
+        use_test_as_val=USE_TEST_AS_VAL,     # 训练期使用测试集验证（统一开关）
         drop_prob_rgb=0.2,                   # 模态随机失活：RGB 概率
         drop_prob_ir=0.2,                    # 模态随机失活：IR 概率
-        close_dropout=16                     # 最后 16 轮关闭模态失活（与总轮次 160 对齐）
+        close_dropout=FINAL_CLOSE_EPOCHS     # 末尾若干轮关闭模态失活，统一由配置常量控制
     )
 
 if __name__ == '__main__':

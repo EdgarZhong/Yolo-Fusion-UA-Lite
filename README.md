@@ -149,7 +149,6 @@
   - **用法**：已完全集成至 `ultralytics` 框架源码 (`models/yolo/detect/train.py`)，直接通过训练参数控制，不再依赖外部 Hook 脚本，实现了训练脚本与框架功能的解耦。
 - **新增训练参数**（直接在 `model.train()` 中传递）：
   - `use_test_as_val=True`：在训练期间直接使用测试集（test）作为验证集，以获得更真实的泛化性能反馈。
-  - `add_val_to_train=True`：当启用 `use_test_as_val` 时，脚本会自动将原验证集（val）合并到训练集（train）中参与训练，最大化利用数据（17789+1445 -> 19234 样本）。
   - `drop_prob_rgb=0.2`：RGB 模态随机失活概率。
   - `drop_prob_ir=0.2`：IR 模态随机失活概率。
   - `close_dropout=10`：在训练结束前 N 个 Epoch 关闭模态失活增强，确保最终收敛稳定性。
@@ -373,4 +372,3 @@ YOLO-Fusion-UA-Lite/
 - [双模态 YOLO-OBB 模型调参优化与策略分析报.md](docs/双模态 YOLO-OBB 模型调参优化与策略分析报.md)：两阶段微调（高分辨率/正则化）结果与失败归因分析、后续改进方向建议。
 - [多模型性能评估与可视化实施文档.md](docs/多模型性能评估与可视化实施文档.md)：最终 7 模型 × 6 维指标评估方案，含速度基准脚本 `src/testing/benchmark_speed_subset.py`、数据汇总 `result/多模型结果汇总.csv` 与雷达图脚本 `src/tools/plot_radar_final.py`。
 - [CM-FA 模块迁移训练与稳定性验证实施方案](docs/CM-FA_Transfer_and_Stability_Plan.md)：**[NEW]** 从最佳模型迁移训练 CM-FA 模块与稳定性验证实施方案。
-

@@ -1,13 +1,13 @@
 """
-在测试集上全量评估最佳模型 FA-Concat_tuned，并生成混淆矩阵图片到 result/<模型目录>/。
+在测试集上全量评估最佳模型 CM-FA-Transferred，并生成混淆矩阵图片到 result/<模型目录>/。
 
 用法示例：
 - 默认权重与目录：
   - python src/tools/build_confusion_matrix_best.py --device 0
 - 指定权重文件：
-  - python src/tools/build_confusion_matrix_best.py --weights models/posttrain/FA-Concat_FPN-PAN_tuned/weights/best.pt --device 0
+  - python src/tools/build_confusion_matrix_best.py --weights models/posttrain/CM-FA-Transferred/weights/best.pt --device 0
 - 指定输出目录与运行名：
-  - python src/tools/build_confusion_matrix_best.py --result-dir result --run-name FA-Concat_FPN-PAN_tuned
+  - python src/tools/build_confusion_matrix_best.py --result-dir result --run-name CM-FA-Transferred
 
 说明：
 - 脚本强制 `plots=True` 以收集混淆矩阵，`save_json=True` 以便后续需要时保存预测结果。
@@ -30,8 +30,8 @@ ROOT = Path(__file__).resolve().parents[2]
 # 路径宏（推荐按需修改）
 DATA_CFG = ROOT / "src" / "cfg" / "datasets" / "dual_obb_dronevehicle.yaml"
 DEFAULT_RESULT_DIR = ROOT / "result"
-DEFAULT_RUN_NAME = "FA-Concat_FPN-PAN_tuned"
-DEFAULT_WEIGHTS_DIR = ROOT / "models" / "posttrain" / "FA-Concat_FPN-PAN_tuned" / "weights"
+DEFAULT_RUN_NAME = "CM-FA-Transferred"
+DEFAULT_WEIGHTS_DIR = ROOT / "models" / "posttrain" / "CM-FA-Transferred" / "weights"
 
 
 def _pick_weights(user_path: str | None) -> Path:
@@ -59,7 +59,7 @@ def run_eval_and_confmat(
     result_dir: Path | None = None,
     run_name: str = DEFAULT_RUN_NAME,
     imgsz: int = 640,
-    batch: int = 12,
+    batch: int = 16,
     conf: float = 0.25,
     iou: float = 0.75,
     max_det: int = 1000,
@@ -116,7 +116,7 @@ def main():
     parser.add_argument("--result-dir", type=str, default=str(DEFAULT_RESULT_DIR), help="结果根目录")
     parser.add_argument("--run-name", type=str, default=DEFAULT_RUN_NAME, help="结果子目录名（模型目录名）")
     parser.add_argument("--imgsz", type=int, default=640, help="测试图像尺寸")
-    parser.add_argument("--batch", type=int, default=12, help="测试批大小")
+    parser.add_argument("--batch", type=int, default=16, help="测试批大小")
     parser.add_argument("--conf", type=float, default=0.25, help="置信度阈值（默认 0.25）")
     parser.add_argument("--iou", type=float, default=0.75, help="NMS的IOU阈值")
     parser.add_argument("--max-det", type=int, default=1000, help="每图最大检测数量")

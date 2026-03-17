@@ -39,7 +39,6 @@ close_dropout: 16
 val: true
 split: val
 use_test_as_val: true
-add_val_to_train: true
 save_json: false
 save_hybrid: false
 conf: 0.25
