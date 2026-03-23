@@ -52,7 +52,7 @@ IMG_SIZE = 640  # 裁切后数据集统一分辨率宽度，配合 rect=True 保
 BATCH = 16  # 可根据显存/CPU性能调整
 CONF_THRES = 0.25  # 统一测试标准：置信度阈值 0.25
 IOU_THRES = 0.75
-MAX_DET = 1000  # 增大最大候选框数量以提升召回，并在创建验证器时打印确认
+MAX_DET = 500  # 统一测试标准：每图最大检测数 500
 
 
 def _find_weights(base: Path) -> Path:
@@ -75,11 +75,13 @@ def _find_weights(base: Path) -> Path:
 def run_eval(
     weights: Path,
     device: str = "0",
+    data_cfg: Path = DATA_CFG,
     result_dir: Path | None = None,
     run_name: str | None = None,
     test_ratio: float = 1.0,
     test_aug: bool = True,
     iou: float = IOU_THRES,
+    max_det: int = MAX_DET,
 ) -> Path:
     """
     运行 OBB 验证流程（split=test），保存评估指标到 指定目录（默认 result/）
@@ -99,7 +101,7 @@ def run_eval(
     args = dict(
         task="obb",
         model=str(weights),
-        data=str(DATA_CFG),
+        data=str(data_cfg),
         split="test",
         imgsz=IMG_SIZE,
         rect=True, #测试时启用长方形输入
@@ -111,14 +113,14 @@ def run_eval(
         conf=CONF_THRES,
         iou=float(iou),
         augment=bool(test_aug),
-        max_det=MAX_DET,
+        max_det=int(max_det),
         project=str(result_root),
         name=name,
     )
 
     # 若设置测试集比例（0-1]，则自建 DataLoader 并按比例裁剪样本数量，以加速评估
     if isinstance(test_ratio, float) and 0.0 < test_ratio < 1.0:
-        data = check_det_dataset(str(DATA_CFG))
+        data = check_det_dataset(str(data_cfg))
         cfg = get_cfg(overrides=dict(task="obb", imgsz=IMG_SIZE, rect=True))
         base_ds = build_yolo_dataset(cfg, data.get("test"), BATCH, data, mode="val")
 
@@ -214,6 +216,8 @@ def main() -> None:
     parser.add_argument("--test-ratio", type=float, default=1.0, help="测试集比例 (0-1]，默认 1.0 全量")
     parser.add_argument("--test-aug", action="store_true", help="启用测试时增强（多尺度/翻转等）")
     parser.add_argument("--iou", type=float, default=IOU_THRES, help="NMS 的 IOU 阈值，默认 0.75 提升召回")
+    parser.add_argument("--max-det", type=int, default=MAX_DET, help="每图最大检测数，默认 500")
+    parser.add_argument("--data-cfg", type=str, default=str(DATA_CFG), help="数据集 YAML 路径")
     args_ns = parser.parse_args()
 
     weights_input = Path(args_ns.weights) if args_ns.weights else _find_weights(WEIGHTS_DIR)
@@ -223,11 +227,13 @@ def main() -> None:
     _ = run_eval(
         weights=weights,
         device=args_ns.device,
+        data_cfg=Path(args_ns.data_cfg),
         result_dir=Path(args_ns.result_dir),
         run_name=args_ns.model_name,
         test_ratio=float(args_ns.test_ratio),
         test_aug=bool(args_ns.test_aug),
         iou=float(args_ns.iou),
+        max_det=int(args_ns.max_det),
     )
 
 
