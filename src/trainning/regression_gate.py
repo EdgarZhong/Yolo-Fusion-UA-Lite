@@ -108,11 +108,14 @@ def _run_dynamic_check(spec: dict, timeout_sec: int) -> None:
     log_text = "\n".join(lines)
     if "Freeze plan:" not in log_text:
         _fail("动态回归失败：未检测到 Freeze plan 日志")
+    has_backbone_freeze_log = any(
+        ("Freezing layer 'model." in line) and (".dfl." not in line) for line in lines
+    )
     if "skip backbone freezing" in log_text:
-        if "Freezing layer 'model.0." in log_text:
+        if has_backbone_freeze_log:
             _fail("动态回归失败：已跳过冻结但仍出现 backbone 冻结日志")
     else:
-        if "Freezing layer 'model.0." not in log_text:
+        if not has_backbone_freeze_log:
             _fail("动态回归失败：未跳过冻结且也未观察到 backbone 冻结日志")
 
 

@@ -194,6 +194,8 @@ python src/trainning/train_manager.py --script src/trainning/<训练脚本>.py
 | `ir_only_pretrained_baseline.py` | IR 单模态 COCO 预训练基准（全量，160 epoch） |
 | `ir_only_pretrained_baseline_quick.py` | IR 单模态快速冒烟验证（fraction=0.05） |
 | `cm_fa_transfer_train.py` | CM-FA 从 yolov8n.pt 迁移重训（全量，220 epoch） |
+| `attention_expb_train.py` | Exp-B：P3 InceptionCoordAttnConcat（全量，160 epoch） |
+| `attention_expc_train.py` | Exp-C：P3 InceptionSimAMConcat（全量，160 epoch） |
 | `crossmodal_fusion_attention_quick_train.py` | CM-FA 快速冒烟验证 |
 | `resume_train.py` | 通用断点续训脚本（`--resume <run_dir>`） |
 
@@ -352,7 +354,11 @@ DroneVehicle，清洗后（删除 329 对跨模态标注不一致样本）：
 |------|------|------|------|
 | `Inception` | `[B,C,H,W]`，要求 `c1%4==0` | `[B,C,H,W]` | 多分支特征提取（1×1 / 3×3 / 5×5 / 池化） |
 | `SEBlock` | `[B,C,H,W]` | `[B,C,H,W]` | 独立通道注意力（GAP → MLP → Sigmoid） |
+| `CoordAtt` | `[B,C,H,W]` | `[B,C,H,W]` | Coordinate Attention（行/列方向编码） |
+| `SimAM` | `[B,C,H,W]` | `[B,C,H,W]` | 参数零开销注意力（ICML 2021） |
 | `FeatureAttentionConcat` | `[x_rgb, x_ir]` 各 `[B,C,H,W]` | `[B,2C,H,W]` | **M5 当前基线**：两路各自 Inception+SE 后 concat |
+| `InceptionCoordAttnConcat` | `[x_rgb, x_ir]` | `[B,2C,H,W]` | Exp-B：两路各自 Inception+CoordAtt 后 concat |
+| `InceptionSimAMConcat` | `[x_rgb, x_ir]` | `[B,2C,H,W]` | Exp-C：两路各自 Inception+SimAM 后 concat |
 | `CrossModalSE` | `x_rgb, x_ir` 各 `[B,C,H,W]` | `(x_rgb_w, x_ir_w)` | 跨模态联合权重，CM-FA 内部使用 |
 | `CrossModalFusionAttention` | `[x_rgb, x_ir]` | `[B,2C,H,W]` | CM-FA：Inception + 跨模态SE + concat |
 | `FusionAttention` | `[x_rgb, x_ir]` | `[B,C,H,W]`（相加） | 早期加法融合，**已弃用** |

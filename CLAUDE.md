@@ -148,6 +148,13 @@ python src/testing/test_stability.py
 - 预训练文件 `yolov8n.pt` 存在。
 - Train Manager 规范字段完整：`train_cmd`、`resume_cmd`、`resume_ready`、`run_dir`、`total_epochs`。
 
+#### 5) 动态门禁前的单轮验证跑执行方式（强制）
+
+- 单轮验证跑必须通过 Train Manager 拉起：`python src/trainning/train_manager.py --script src/trainning/<训练脚本>.py`。
+- 监控训练日志，确认第 1 轮训练与验证结束后手动停止进程，用于保留 `weights/last.pt`。
+- 禁止通过临时修改训练脚本（如把 `epochs` 改为 1、运行时覆写脚本常量）来替代该流程。
+- 完成上述步骤后再执行动态门禁：`python src/trainning/regression_gate.py --script src/trainning/<训练脚本>.py --dynamic`。
+
 ## 重要文档索引
 
 | 文档 | 路径 | 说明 |

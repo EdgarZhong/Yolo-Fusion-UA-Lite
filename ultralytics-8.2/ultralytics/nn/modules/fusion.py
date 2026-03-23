@@ -115,6 +115,93 @@ class InceptionConcat(nn.Module):
         return torch.cat([fr, fi], dim=1).contiguous()
 
 
+class h_sigmoid(nn.Module):
+    def __init__(self, inplace: bool = True):
+        super().__init__()
+        self.relu = nn.ReLU6(inplace=inplace)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.relu(x + 3) / 6
+
+
+class h_swish(nn.Module):
+    def __init__(self, inplace: bool = True):
+        super().__init__()
+        self.sigmoid = h_sigmoid(inplace=inplace)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * self.sigmoid(x)
+
+
+class CoordAtt(nn.Module):
+    def __init__(self, inp: int, oup: int, reduction: int = 32):
+        super().__init__()
+        self.pool_h = nn.AdaptiveAvgPool2d((None, 1))
+        self.pool_w = nn.AdaptiveAvgPool2d((1, None))
+        mip = max(8, inp // reduction)
+        self.conv1 = nn.Conv2d(inp, mip, kernel_size=1, stride=1, padding=0)
+        self.bn1 = nn.BatchNorm2d(mip)
+        self.act = h_swish()
+        self.conv_h = nn.Conv2d(mip, oup, kernel_size=1, stride=1, padding=0)
+        self.conv_w = nn.Conv2d(mip, oup, kernel_size=1, stride=1, padding=0)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        identity = x
+        _, _, h, w = x.size()
+        x_h = self.pool_h(x)
+        x_w = self.pool_w(x).permute(0, 1, 3, 2)
+        y = torch.cat([x_h, x_w], dim=2)
+        y = self.act(self.bn1(self.conv1(y)))
+        x_h, x_w = torch.split(y, [h, w], dim=2)
+        x_w = x_w.permute(0, 1, 3, 2)
+        a_h = self.conv_h(x_h).sigmoid()
+        a_w = self.conv_w(x_w).sigmoid()
+        return (identity * a_h * a_w).contiguous()
+
+
+class SimAM(nn.Module):
+    def __init__(self, e_lambda: float = 1e-4):
+        super().__init__()
+        self.e_lambda = e_lambda
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        n = x.shape[2] * x.shape[3] - 1
+        d = (x - x.mean(dim=[2, 3], keepdim=True)).pow(2)
+        v = d.sum(dim=[2, 3], keepdim=True) / n
+        e_inv = d / (4 * (v + self.e_lambda)) + 0.5
+        return (x * torch.sigmoid(e_inv)).contiguous()
+
+
+class InceptionCoordAttnConcat(nn.Module):
+    def __init__(self, c1: int):
+        super().__init__()
+        self.inc_rgb = Inception(c1)
+        self.inc_ir = Inception(c1)
+        self.ca_rgb = CoordAtt(c1, c1)
+        self.ca_ir = CoordAtt(c1, c1)
+
+    def forward(self, x: list[torch.Tensor] | tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
+        x_rgb, x_ir = x
+        fr = self.ca_rgb(self.inc_rgb(x_rgb))
+        fi = self.ca_ir(self.inc_ir(x_ir))
+        return torch.cat([fr, fi], dim=1).contiguous()
+
+
+class InceptionSimAMConcat(nn.Module):
+    def __init__(self, c1: int):
+        super().__init__()
+        self.inc_rgb = Inception(c1)
+        self.inc_ir = Inception(c1)
+        self.sa_rgb = SimAM()
+        self.sa_ir = SimAM()
+
+    def forward(self, x: list[torch.Tensor] | tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
+        x_rgb, x_ir = x
+        fr = self.sa_rgb(self.inc_rgb(x_rgb))
+        fi = self.sa_ir(self.inc_ir(x_ir))
+        return torch.cat([fr, fi], dim=1).contiguous()
+
+
 class CrossModalSE(nn.Module):
     """跨模态 SE 注意力模块：联合感知 RGB 与 IR 的全局信息后分别生成两路权重
 

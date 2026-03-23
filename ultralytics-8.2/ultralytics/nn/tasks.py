@@ -37,6 +37,8 @@ from ultralytics.nn.modules import (
     FusionAttention,
     FeatureAttentionConcat,
     InceptionConcat,
+    InceptionCoordAttnConcat,
+    InceptionSimAMConcat,
     CrossModalFusionAttention,
     Classify,
     Concat,
@@ -1107,6 +1109,18 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         elif m is InceptionConcat:
             assert isinstance(f, (list, tuple)) and len(f) == 2
             assert ch[f[0]] == ch[f[1]], "InceptionConcat 两路输入通道必须一致"
+            c2 = ch[f[0]] + ch[f[1]]
+            if not args:
+                args = [ch[f[0]]]
+        elif m is InceptionCoordAttnConcat:
+            assert isinstance(f, (list, tuple)) and len(f) == 2
+            assert ch[f[0]] == ch[f[1]], "InceptionCoordAttnConcat 两路输入通道必须一致"
+            c2 = ch[f[0]] + ch[f[1]]
+            if not args:
+                args = [ch[f[0]]]
+        elif m is InceptionSimAMConcat:
+            assert isinstance(f, (list, tuple)) and len(f) == 2
+            assert ch[f[0]] == ch[f[1]], "InceptionSimAMConcat 两路输入通道必须一致"
             c2 = ch[f[0]] + ch[f[1]]
             if not args:
                 args = [ch[f[0]]]
