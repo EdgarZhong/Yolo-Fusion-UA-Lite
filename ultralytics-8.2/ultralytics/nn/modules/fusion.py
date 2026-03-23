@@ -102,6 +102,19 @@ class FeatureAttentionConcat(nn.Module):
         return torch.cat([fr, fi], dim=1).contiguous()
 
 
+class InceptionConcat(nn.Module):
+    def __init__(self, c1: int):
+        super().__init__()
+        self.inc_rgb = Inception(c1)
+        self.inc_ir = Inception(c1)
+
+    def forward(self, x: list[torch.Tensor] | tuple[torch.Tensor, torch.Tensor]) -> torch.Tensor:
+        x_rgb, x_ir = x
+        fr = self.inc_rgb(x_rgb)
+        fi = self.inc_ir(x_ir)
+        return torch.cat([fr, fi], dim=1).contiguous()
+
+
 class CrossModalSE(nn.Module):
     """跨模态 SE 注意力模块：联合感知 RGB 与 IR 的全局信息后分别生成两路权重
 

@@ -36,6 +36,7 @@ from ultralytics.nn.modules import (
     ModalitySelector,
     FusionAttention,
     FeatureAttentionConcat,
+    InceptionConcat,
     CrossModalFusionAttention,
     Classify,
     Concat,
@@ -321,6 +322,8 @@ class DetectionModel(BaseModel):
         self.names = {i: f"{i}" for i in range(self.yaml["nc"])}  # default names dict
         self.inplace = self.yaml.get("inplace", True)
         self.end2end = getattr(self.model[-1], "end2end", False)
+        self.backbone_freeze_indices = list(range(len(self.yaml.get("backbone", []))))
+        self.backbone_freeze_mode = "epoch"
 
         # Build strides
         m = self.model[-1]  # Detect()
@@ -1098,6 +1101,12 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             # FA‑Concat：两路输入通道必须一致；输出通道为两路之和；构造参数传入单路通道数
             assert isinstance(f, (list, tuple)) and len(f) == 2
             assert ch[f[0]] == ch[f[1]], "FeatureAttentionConcat 两路输入通道必须一致"
+            c2 = ch[f[0]] + ch[f[1]]
+            if not args:
+                args = [ch[f[0]]]
+        elif m is InceptionConcat:
+            assert isinstance(f, (list, tuple)) and len(f) == 2
+            assert ch[f[0]] == ch[f[1]], "InceptionConcat 两路输入通道必须一致"
             c2 = ch[f[0]] + ch[f[1]]
             if not args:
                 args = [ch[f[0]]]

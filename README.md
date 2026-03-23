@@ -55,7 +55,7 @@ conda activate .\.conda\ultra82-py312
 
 | 约束 | 说明 |
 |------|------|
-| 初始化：`yolov8n.pt` | 新架构必须从 COCO 预训练初始化，不得用 M5 权重（迁移效果极差） |
+| 初始化：`yolov8n.pt` | 新架构必须从 COCO 预训练加载骨干部分权重 |
 | 模态顺序：ch1-3=RGB，ch4-6=IR | 代码约定，改动会导致静默错误 |
 | 数据集：只用 `data_croped/` | 去白边版本（640×512），已完成预处理 |
 | Inception 输入 `c1 % 4 == 0` | 仅约束直接输入 Inception 的张量 |
@@ -193,11 +193,91 @@ python src/trainning/train_manager.py --script src/trainning/<训练脚本>.py
 |------|------|
 | `ir_only_pretrained_baseline.py` | IR 单模态 COCO 预训练基准（全量，160 epoch） |
 | `ir_only_pretrained_baseline_quick.py` | IR 单模态快速冒烟验证（fraction=0.05） |
-| `cm_fa_transfer_train.py` | CM-FA 从 yolov8n.pt 迁移训练 |
+| `cm_fa_transfer_train.py` | CM-FA 从 yolov8n.pt 迁移重训（全量，220 epoch） |
 | `crossmodal_fusion_attention_quick_train.py` | CM-FA 快速冒烟验证 |
 | `resume_train.py` | 通用断点续训脚本（`--resume <run_dir>`） |
 
 > **约定**：新训练脚本必须实现 `get_train_manager_spec()` 接口，才能接入 train_manager 的自动重试与完成检测。
+
+### 冻结参数（框架适配）
+
+`freeze` 参数在本仓库已改为“按轮冻结主干”语义，并同时兼容单主干与双主干：
+
+- 对所有 DetectionModel 派生模型，`freeze=N` 解释为“前 N 轮冻结全部 backbone 层”，在第 `N+1` 轮开始前自动解冻。
+- 单主干与双主干统一使用上述语义；双主干不再采用“冻结前 N 个层索引”的默认行为。
+- 如需精细控制，仍支持 `freeze=[...]` 显式传层索引列表（该模式不自动解冻）。
+
+本次适配涉及：
+- `ultralytics-8.2/ultralytics/engine/trainer.py`
+- `ultralytics-8.2/ultralytics/nn/tasks.py`
+
+### 权重迁移与冻结最佳实践（强制）
+
+以下条目为本仓库训练规范，后续实验必须始终遵守：
+
+1. 预训练初始化统一使用 `yolov8n.pt`，禁止混用其他来源权重作为默认起点。
+2. 双主干模型禁止隐式整网 `pretrained=<pt>` 加载，必须使用显式主干迁移：
+   - 仅迁移单主干 Backbone 到双主干 RGB/IR Backbone；
+   - 不迁移 Fusion/Neck/Head，避免结构错配污染初始化。
+3. 显式主干迁移场景必须设置 `pretrained=False`，并打印迁移统计日志（`copied/skipped`）。
+4. 冻结策略统一使用 `freeze=N` 轮语义：
+   - 单主干与双主干都表示“前 N 轮冻结全部 backbone，随后自动解冻”；
+   - 不再使用“按层索引永久冻结”的旧认知。
+5. 若必须按层精细冻结，可使用 `freeze=[...]`，但该模式不自动解冻，需明确记录原因。
+6. 训练脚本必须通过 `get_train_manager_spec()` 暴露 `run_dir/total_epochs/resume_ready`，并与实际输出目录一致。
+7. 每次训练前必须完成自检：YAML 可解析、数据集指向 `data_croped/`、`yolov8n.pt` 存在、超参与研究手册一致。
+
+> 说明：以上为本仓库自定义框架行为，**与原版 Ultralytics 默认 freeze 语义不同**，后续开发与复现实验均以本仓库文档为准。
+
+### 固定回归（开训前参数控制防呆）
+
+固定回归不是“再训练一次”，而是在每次正式开训前，执行一组低成本、可重复、可判定的检查，用来确认参数控制链路没有退化。
+
+目标是防止以下静默错误：
+- 预训练迁移失效但训练仍能启动；
+- freeze 语义被改坏（按层冻结/不解冻/续训重复冻结）；
+- 断点续训加载流程异常（错误权重源、错误起始轮次）。
+
+建议固定回归检查项：
+1. **迁移检查（脚本侧）**  
+   - 必须看到迁移统计日志（`copied/skipped`）；  
+   - `copied > 0` 且源主干命中数量 `source_hits > 0`；  
+   - 失败时必须抛异常中止，不允许静默继续训练。
+2. **冻结检查（框架侧，新开训练）**  
+   - `freeze=N` 时必须打印 freeze plan；  
+   - 第 1 轮前存在 backbone 冻结日志；  
+   - 到第 `N+1` 轮开始前出现解冻日志。
+3. **续训检查（框架侧，已过冻结窗口）**  
+   - 必须打印 `skip backbone freezing`；  
+   - 不得再出现 backbone 的 `Freezing layer`；  
+   - 仅允许 `.dfl` 的常驻冻结日志。
+
+任一检查不满足时，视为参数控制风险，禁止进入正式全量训练。
+
+固定回归的执行原则是“**控制链路验证**”而不是“指标验证”，因此不跑全量训练：
+- 通过极小训练规模快速触发控制逻辑（例如 `freeze=1`、`epochs=2`、`fraction<=0.01`、`workers=0`、`val=False`）；
+- 重点检查日志与状态迁移是否正确，不以 mAP 作为通过标准；
+- 续训检查只需进入首轮即可判定是否 `skip backbone freezing`，不需要完整跑完。
+
+推荐两阶段执行：
+1. **静态阶段（秒级）**：模型构建、权重迁移命中、freeze 计划解析、参数合法性校验。
+2. **动态阶段（分钟级）**：微型训练 + 一次续训，验证“冻结→解冻→续训跳过冻结”三段行为。
+
+该流程设计目标是：在最小 GPU 时间内发现参数控制退化，避免全量训练后才暴露问题。
+
+单入口执行方式：
+
+```bash
+# 静态门禁（所有训练脚本都应通过，秒级）
+python src/trainning/regression_gate.py --script src/trainning/<训练脚本>.py
+
+# 动态门禁（需要已有 last.pt，分钟级）
+python src/trainning/regression_gate.py --script src/trainning/<训练脚本>.py --dynamic --timeout-sec 90
+```
+
+判定标准：
+- 命令退出码为 0 且输出 `[RegressionGate] PASS` 才允许进入正式全量训练；
+- 任一异常直接非 0 退出，视为参数控制风险。
 
 ### 模态随机失活（Modality Dropout）
 

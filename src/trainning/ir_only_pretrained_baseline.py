@@ -1,10 +1,10 @@
 """
-IR 单模态 YOLOv8n OBB 检测模型训练脚本（COCO 预训练权重初始化）
+IR 单模态 YOLOv8n OBB 检测模型训练脚本（COCO 主干迁移初始化）
 
 本脚本作为双模态融合模型的单模态性能基准，使用：
 - 标准 YOLOv8n 架构（无自定义融合模块）
 - 单模态 IR 输入（3 通道）
-- COCO 官方预训练权重 yolov8n-obb.pt 初始化
+- COCO 官方预训练权重 yolov8n.pt 主干迁移初始化
 
 技术实现：通过自定义 IR_OBB_Trainer 重写 get_model() 方法，
 使用标准 OBBModel(ch=3) 替代 DualBackboneOBBModel(ch=6)。
@@ -21,23 +21,77 @@ if str(ULTRA) not in sys.path:
 
 # 导入 OBB 训练器与模型构建工具
 from ultralytics.models.yolo.obb import OBBTrainer
-from ultralytics.nn.tasks import OBBModel
+from ultralytics.nn.tasks import OBBModel, attempt_load_one_weight
+from ultralytics.utils import RANK
 
 # 训练运行名称，用于确定输出目录
-RUN_NAME = "IR-Only-Pretrained"
+RUN_NAME = "IR-Only-Pretrained-New"
 # 总训练轮次
 TOTAL_EPOCHS = 160
 # 训练尾期关闭 Mosaic 的轮次数
 CLOSE_MOSAIC_EPOCHS = 16
 # 冻结 backbone 的轮次数
 FREEZE_EPOCHS = 10
+PRETRAINED_WEIGHTS = ROOT / "yolov8n.pt"
+SINGLE_TO_IR_BACKBONE_MAP = {
+    0: 0,
+    1: 1,
+    2: 2,
+    3: 3,
+    4: 4,
+    5: 5,
+    6: 6,
+    7: 7,
+    8: 8,
+    9: 9,
+}
+
+
+def transfer_single_backbone_to_ir_obb(source_weights: Path, target_model) -> dict:
+    if not source_weights.exists():
+        raise FileNotFoundError(f"预训练权重不存在: {source_weights}")
+    max_target_idx = max(SINGLE_TO_IR_BACKBONE_MAP.values())
+    if not hasattr(target_model, "model") or len(target_model.model) <= max_target_idx:
+        raise ValueError(f"目标模型结构与映射不一致，最大目标层索引={max_target_idx}")
+
+    source_model, _ = attempt_load_one_weight(str(source_weights))
+    source_sd = source_model.float().state_dict()
+    target_sd = target_model.state_dict()
+    copied = 0
+    skipped = 0
+    source_hits = 0
+
+    for source_idx, target_idx in SINGLE_TO_IR_BACKBONE_MAP.items():
+        source_prefix = f"model.{source_idx}."
+        for key, value in source_sd.items():
+            if not key.startswith(source_prefix):
+                continue
+            source_hits += 1
+            suffix = key[len(source_prefix):]
+            target_key = f"model.{target_idx}.{suffix}"
+            if target_key in target_sd and target_sd[target_key].shape == value.shape:
+                target_sd[target_key].copy_(value)
+                copied += 1
+            else:
+                skipped += 1
+
+    if RANK in (-1, 0):
+        print(f"[InitTransfer][IR] source={source_weights}")
+        print(f"[InitTransfer][IR] copied={copied}, skipped={skipped}")
+
+    if source_hits == 0 or copied == 0:
+        raise RuntimeError(
+            f"主干迁移失败: source_hits={source_hits}, copied={copied}，请检查映射与模型结构是否匹配"
+        )
+
+    return {"copied": copied, "skipped": skipped}
 
 
 class IR_OBB_Trainer(OBBTrainer):
     """
     IR 单模态 OBB 训练器：
     - 重写 get_model，构建 3 通道输入的标准 YOLOv8n OBB 模型
-    - 加载 COCO 预训练权重 yolov8n-obb.pt 进行初始化
+    - 加载 COCO 预训练权重 yolov8n.pt 并执行主干迁移初始化
     """
 
     def get_model(self, cfg=None, weights=None, verbose=True):
@@ -46,9 +100,7 @@ class IR_OBB_Trainer(OBBTrainer):
         """
         # 使用标准 OBBModel，3 通道输入
         model = OBBModel(cfg, ch=3, nc=self.data["nc"], verbose=verbose)
-        # 加载预训练权重（如果提供）
-        if weights:
-            model.load(weights)
+        transfer_single_backbone_to_ir_obb(PRETRAINED_WEIGHTS, model)
         return model
 
 
@@ -105,15 +157,13 @@ def main():
     """
     主训练函数
 
-    使用 YOLOv8n COCO 预训练权重初始化，在 IR 单模态数据上训练 OBB 检测模型。
+    使用 YOLOv8n COCO 主干迁移初始化，在 IR 单模态数据上训练 OBB 检测模型。
     这是双模态融合模型的性能基准实验。
     """
     # -------------------------------------------------------------------------
     # 配置路径与参数
     # -------------------------------------------------------------------------
-    # COCO 预训练权重（YOLOv8n-obb.pt），ultralytics 会自动下载如果不存在
-    # 注意：必须使用 -obb 版本，OBB 任务使用旋转框格式（xywhr），与标准检测（xyxy）不同
-    PRETRAINED_WEIGHTS = "yolov8n-obb.pt"
+    MODEL_CFG = ROOT / "ultralytics-8.2" / "ultralytics" / "cfg" / "models" / "v8" / "yolov8-obb.yaml"
 
     # 数据集配置（IR 单模态，指向 data_croped/ 目录）
     DATA_YAML = ROOT / "src" / "cfg" / "datasets" / "ir_obb_dronevehicle.yaml"
@@ -129,7 +179,8 @@ def main():
     overrides = {
         # 任务与核心路径
         "task": "obb",
-        "model": PRETRAINED_WEIGHTS,        # 预训练权重作为模型配置
+        "model": str(MODEL_CFG),
+        "pretrained": False,
         "data": str(DATA_YAML),
         # 训练规模与资源
         "epochs": TOTAL_EPOCHS,             # 总训练轮次
@@ -183,7 +234,7 @@ def main():
 
     print(f"[Train][IR-OBB] 启动训练：epochs={overrides['epochs']}, batch={overrides['batch']}, imgsz={overrides['imgsz']}")
     print(f"[Train][IR-OBB] 数据配置: {DATA_YAML}")
-    print(f"[Train][IR-OBB] 预训练权重: {PRETRAINED_WEIGHTS}")
+    print(f"[Train][IR-OBB] 主干迁移权重: {PRETRAINED_WEIGHTS}")
     print(f"[Train][IR-OBB] 输出目录: {RUN_DIR}")
 
     # -------------------------------------------------------------------------

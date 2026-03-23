@@ -227,6 +227,48 @@ class BaseTrainer:
             world_size=world_size,
         )
 
+    def _resolve_freeze_plan(self):
+        freeze_arg = self.args.freeze
+        if isinstance(freeze_arg, int) and freeze_arg < 0:
+            raise ValueError(f"freeze 参数不能为负数，当前值={freeze_arg}")
+        auto_unfreeze_epoch = None
+        if (
+            isinstance(freeze_arg, int)
+            and freeze_arg > 0
+            and hasattr(self.model, "backbone_freeze_indices")
+            and getattr(self.model, "backbone_freeze_mode", "") == "epoch"
+        ):
+            freeze_list = list(getattr(self.model, "backbone_freeze_indices"))
+            if not freeze_list:
+                raise ValueError("模型声明了按轮冻结模式，但 backbone_freeze_indices 为空")
+            auto_unfreeze_epoch = int(freeze_arg)
+        elif isinstance(freeze_arg, (list, tuple)):
+            freeze_list = list(freeze_arg)
+        elif isinstance(freeze_arg, int):
+            freeze_list = list(range(freeze_arg))
+        else:
+            freeze_list = []
+        if freeze_list:
+            max_idx = len(getattr(self.model, "model", [])) - 1
+            invalid_idx = [i for i in freeze_list if not isinstance(i, int) or i < 0 or i > max_idx]
+            if invalid_idx:
+                raise ValueError(f"freeze 层索引越界或非法: {invalid_idx}, 模型最大层索引={max_idx}")
+            freeze_list = sorted(set(freeze_list))
+        return freeze_list, auto_unfreeze_epoch
+
+    def _maybe_unfreeze_epoch_layers(self):
+        if getattr(self, "_auto_unfreeze_epoch", None) is None:
+            return
+        if self.epoch != self._auto_unfreeze_epoch:
+            return
+        unfrozen = 0
+        for name, param in self.model.named_parameters():
+            if any(p in name for p in self._epoch_freeze_patterns) and not param.requires_grad and param.dtype.is_floating_point:
+                param.requires_grad = True
+                unfrozen += 1
+        LOGGER.info(f"Unfreezing {unfrozen} parameters at epoch {self.epoch + 1}")
+        self._auto_unfreeze_epoch = None
+
     def _setup_train(self, world_size):
         """Builds dataloaders and optimizer on correct rank process."""
         # Model
@@ -236,15 +278,26 @@ class BaseTrainer:
         self.set_model_attributes()
 
         # Freeze layers
-        freeze_list = (
-            self.args.freeze
-            if isinstance(self.args.freeze, list)
-            else range(self.args.freeze)
-            if isinstance(self.args.freeze, int)
-            else []
+        freeze_list, self._auto_unfreeze_epoch = self._resolve_freeze_plan()
+        resume_start_epoch = ckpt.get("epoch", -1) + 1 if (ckpt is not None and self.resume) else None
+        if (
+            self._auto_unfreeze_epoch is not None
+            and resume_start_epoch is not None
+            and resume_start_epoch >= self._auto_unfreeze_epoch
+        ):
+            LOGGER.info(
+                f"Resume start epoch {resume_start_epoch + 1} already passed freeze window "
+                f"(freeze={self._auto_unfreeze_epoch}); skip backbone freezing"
+            )
+            freeze_list = []
+            self._auto_unfreeze_epoch = None
+        LOGGER.info(
+            f"Freeze plan: layers={len(freeze_list)}, auto_unfreeze_epoch={self._auto_unfreeze_epoch}, "
+            f"resume_start_epoch={None if resume_start_epoch is None else resume_start_epoch + 1}"
         )
         always_freeze_names = [".dfl"]  # always freeze these layers
         freeze_layer_names = [f"model.{x}." for x in freeze_list] + always_freeze_names
+        self._epoch_freeze_patterns = [f"model.{x}." for x in freeze_list]
         for k, v in self.model.named_parameters():
             # v.register_hook(lambda x: torch.nan_to_num(x))  # NaN to 0 (commented for erratic training results)
             if any(x in k for x in freeze_layer_names):
@@ -351,6 +404,7 @@ class BaseTrainer:
                 warnings.simplefilter("ignore")  # suppress 'Detected lr_scheduler.step() before optimizer.step()'
                 self.scheduler.step()
 
+            self._maybe_unfreeze_epoch_layers()
             self.model.train()
             if RANK != -1:
                 self.train_loader.sampler.set_epoch(epoch)

@@ -84,7 +84,7 @@ from .transformer import (
     TransformerEncoderLayer,
     TransformerLayer,
 )
-from .fusion import FusionAttention, FeatureAttentionConcat, CrossModalFusionAttention
+from .fusion import FusionAttention, FeatureAttentionConcat, InceptionConcat, CrossModalFusionAttention
 
 __all__ = (
     "Conv",
@@ -157,5 +157,6 @@ __all__ = (
     "SCDown",
     "FusionAttention",
     "FeatureAttentionConcat",
+    "InceptionConcat",
     "CrossModalFusionAttention",
 )
