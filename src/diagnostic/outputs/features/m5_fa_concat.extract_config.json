@@ -1,0 +1,50 @@
+{
+  "time": "2026-03-24T09:20:51.897323",
+  "weights": "D:\\Code\\DeepLearning\\YOLO-Fusion-UA-Lite\\models\\posttrain\\FA-Concat_FPN-PAN_tuned\\weights\\best.pt",
+  "data_cfg": "D:\\Code\\DeepLearning\\YOLO-Fusion-UA-Lite\\src\\cfg\\datasets\\dual_obb_dronevehicle.yaml",
+  "hook_cfg": "D:\\Code\\DeepLearning\\YOLO-Fusion-UA-Lite\\src\\diagnostic\\extract\\hook_configs\\m5_fa_concat.yaml",
+  "split": "test",
+  "imgsz": 640,
+  "batch": 8,
+  "workers": 2,
+  "max_samples": 0,
+  "device": "cuda:0",
+  "features": [
+    "feat_fused_p3",
+    "feat_ir_p3",
+    "feat_pre_attn_ir",
+    "feat_pre_attn_rgb",
+    "feat_rgb_p3"
+  ],
+  "n_objects": 176842,
+  "n_images": 8876,
+  "hook_config_raw": {
+    "model_name": "M5_FA-Concat",
+    "hooks": {
+      "rgb_p3": {
+        "layer_idx": 7,
+        "capture": "output"
+      },
+      "ir_p3": {
+        "layer_idx": 17,
+        "capture": "output"
+      },
+      "pre_attn_rgb": {
+        "module_path": "model.23.inc_rgb",
+        "capture": "output"
+      },
+      "pre_attn_ir": {
+        "module_path": "model.23.inc_ir",
+        "capture": "output"
+      },
+      "fused_p3": {
+        "layer_idx": 24,
+        "capture": "output"
+      },
+      "attn_weights": {
+        "module_path": "model.23.se_rgb",
+        "capture": "weights"
+      }
+    }
+  }
+}

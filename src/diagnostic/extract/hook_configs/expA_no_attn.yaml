@@ -1,0 +1,17 @@
+model_name: "Exp-A_NoAttn"
+hooks:
+  rgb_p3:
+    layer_idx: 7
+    capture: "output"
+  ir_p3:
+    layer_idx: 17
+    capture: "output"
+  pre_attn_rgb:
+    module_path: "model.23.inc_rgb"
+    capture: "output"
+  pre_attn_ir:
+    module_path: "model.23.inc_ir"
+    capture: "output"
+  fused_p3:
+    layer_idx: 24
+    capture: "output"

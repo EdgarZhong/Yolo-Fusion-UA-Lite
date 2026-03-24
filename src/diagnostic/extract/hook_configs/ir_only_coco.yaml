@@ -1,0 +1,5 @@
+model_name: "IR-only_COCO"
+hooks:
+  ir_p3:
+    layer_idx: 4
+    capture: "output"

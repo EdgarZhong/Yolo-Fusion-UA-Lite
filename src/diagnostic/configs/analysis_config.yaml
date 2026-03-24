@@ -1,0 +1,12 @@
+seed: 42
+class_pairs:
+  - "van:car"
+  - "freight_car:truck"
+  - "car:bus"
+linear_probe:
+  folds: 5
+tsne:
+  perplexity_main: 30
+  perplexity_check:
+    - 15
+    - 50
