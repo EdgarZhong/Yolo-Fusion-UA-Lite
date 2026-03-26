@@ -127,14 +127,16 @@ python src/testing/test_stability.py
 - `patience=0`
 - `close_mosaic=16`
 - `close_dropout=16`
-- `drop_prob_rgb=0.2`
-- `drop_prob_ir=0.2`
+- `drop_prob_rgb=0.10`
+- `drop_prob_ir=0.10`
+- `erasing=0.0`（所有训练脚本必须显式设置）
 - `batch=16`
 - `conf=0.25`
 - `iou=0.75`
 - `max_det=500`
 - `use_test_as_val=True`
 - `imgsz=640`
+- 验证阶段已禁用模态 dropout，无需额外配置。
 
 #### 3) 训练输出目录约定
 

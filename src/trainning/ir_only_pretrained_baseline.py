@@ -195,7 +195,7 @@ def main():
         # 验证参数
         "conf": 0.25,                       # 验证时置信度阈值
         "iou": 0.75,                        # NMS IoU 阈值
-        "max_det": 300,                     # 每图最大检测数
+        "max_det": 500,                     # 每图最大检测数
         # 数据增强
         "mosaic": 1.0,                      # 启用 Mosaic 增强
         "close_mosaic": CLOSE_MOSAIC_EPOCHS,  # 最后 16 轮关闭 Mosaic
@@ -211,6 +211,7 @@ def main():
         "hsv_h": 0.0,                       # 关闭 HSV 色调增强
         "hsv_s": 0.0,                       # 关闭 HSV 饱和度增强
         "hsv_v": 0.0,                       # 关闭 HSV 明度增强
+        "erasing": 0.0,                     # 关闭 Random Erasing
         # 优化器配置（YOLOv8 默认 SGD）
         "optimizer": "SGD",
         "lr0": 0.01,                        # 初始学习率
@@ -220,6 +221,9 @@ def main():
         "warmup_epochs": 3.0,               # Warmup 轮次
         # 验证配置（使用测试集作为验证集）
         "use_test_as_val": True,
+        "drop_prob_rgb": 0.10,              # 与统一超参保持一致（IR单模态下不生效）
+        "drop_prob_ir": 0.10,               # 与统一超参保持一致（IR单模态下不生效）
+        "close_dropout": CLOSE_MOSAIC_EPOCHS,
         # 输出与保存配置
         "project": str(PROJECT_DIR),        # 训练输出根目录
         "name": NAME,                       # 训练运行名称

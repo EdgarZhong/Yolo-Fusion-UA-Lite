@@ -288,11 +288,19 @@ Dropout 功能已集成至 `ultralytics-8.2/ultralytics/models/yolo/detect/train
 | 参数 | 说明 | 当前阶段默认值 |
 |------|------|--------------|
 | `use_test_as_val=True` | 训练期以测试集作为验证集，best 权重对测试集最优 | **必须开启** |
-| `drop_prob_rgb=0.2` | RGB 模态丢弃概率（互斥，不同时丢弃两路） | 0.2 |
-| `drop_prob_ir=0.2` | IR 模态丢弃概率 | 0.2 |
+| `drop_prob_rgb=0.10` | RGB 模态最终丢弃概率（直接语义） | 0.10 |
+| `drop_prob_ir=0.10` | IR 模态最终丢弃概率（直接语义） | 0.10 |
 | `close_dropout=16` | 训练尾期关闭 dropout 的轮次数 | 16 |
+| `erasing=0.0` | 关闭 Random Erasing，避免小目标被随机遮挡 | 0.0 |
 
-60% 概率保留双模态，20% 概率仅保留 IR，20% 概率仅保留 RGB，不会同时丢弃两路。
+当前实现采用“直接语义”采样：
+- 双模态完整概率 = `1 - drop_prob_rgb - drop_prob_ir`
+- 仅 IR 概率 = `drop_prob_rgb`（即丢 RGB）
+- 仅 RGB 概率 = `drop_prob_ir`（即丢 IR）
+- 不允许 `drop_prob_rgb + drop_prob_ir > 1.0`
+- 不提供全黑输入分支
+
+验证流程已禁用模态 dropout：训练过程中的验证仅用于 checkpoint 选择，始终按完整双模态输入评估。
 
 > 当前阶段统一超参（epochs/freeze/close_mosaic 等）见 `docs/research/研究备忘录_v7.md` 第 5.2 节。
 
@@ -388,6 +396,13 @@ Neck 输出（经 FPN+PANet 后）：Neck-P3 → 层34，Final-P4 → 层37，Fi
 - 新模块已完成 `ultralytics.nn.modules` 导出与 `parse_model` 解析注册，可直接被 YAML 模块名解析。
 - `parse_model` 已支持 `CrossModalAlign` 后接融合模块时的 `from: -1` 链式写法，允许对齐层输出 list 直接传递给融合层。
 - 本次仅实现模块与测试，不改动任何训练/实验 YAML；待注意力选型完成后再切换基线配置。
+
+### 框架变更记录（2026-03-27）
+
+- `ultralytics/models/yolo/detect/val.py` 已移除模态随机失活逻辑，训练过程中的验证阶段不再执行 dropout。
+- `ultralytics/models/yolo/detect/train.py` 的模态随机失活改为“直接语义”采样：`drop_prob_rgb/drop_prob_ir` 直接表示最终丢弃概率。
+- 训练阶段新增参数防呆：当 `drop_prob_rgb + drop_prob_ir > 1.0` 时直接报错。
+- 训练脚本统一显式设置 `erasing=0.0`，并对齐 `drop_prob_rgb=0.10`、`drop_prob_ir=0.10`。
 
 **已废弃方案（勿重复踩坑）：**
 - 直接依赖 `site-packages` 中的高版本 `ultralytics 8.3.x`——版本差异导致行为不一致

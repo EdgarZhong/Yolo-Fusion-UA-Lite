@@ -60,38 +60,32 @@ class DetectionTrainer(BaseTrainer):
         batch["img"] = batch["img"].to(self.device, non_blocking=True).float() / 255
         
         # Modality Dropout (RGB+IR)
-        # Apply only if configured and not in the closing epochs
-        if (self.args.drop_prob_rgb > 0 or self.args.drop_prob_ir > 0) and \
-           (self.epochs - self.epoch > self.args.close_dropout):
-            
+        # p_rgb/p_ir 表示“最终丢弃该模态”的直接概率，不包含全黑样本
+        p_rgb = float(self.args.drop_prob_rgb)
+        p_ir = float(self.args.drop_prob_ir)
+        in_dropout_window = (self.epochs - self.epoch) > self.args.close_dropout
+
+        if (p_rgb > 0 or p_ir > 0) and in_dropout_window:
+            if p_rgb + p_ir > 1.0:
+                raise ValueError(f"drop_prob_rgb({p_rgb}) + drop_prob_ir({p_ir}) > 1.0")
+
             imgs = batch["img"]
             # Only apply to 6-channel input (3 RGB + 3 IR)
             if imgs.shape[1] == 6:
                 B = imgs.shape[0]
-                # Generate random masks
-                rand_rgb = torch.rand(B, device=imgs.device)
-                rand_ir = torch.rand(B, device=imgs.device)
-                
-                mask_rgb = rand_rgb < self.args.drop_prob_rgb
-                mask_ir = rand_ir < self.args.drop_prob_ir
-                
-                # Mutex check: prevent dropping both modalities (all black)
-                conflict = mask_rgb & mask_ir
-                if conflict.any():
-                    # For conflicting samples, randomly choose one to KEEP
-                    # True: Keep IR (unset mask_ir), False: Keep RGB (unset mask_rgb)
-                    resolve_choice = torch.rand(conflict.sum(), device=imgs.device) > 0.5
-                    
-                    # Update masks based on choice
-                    mask_ir[conflict] = mask_ir[conflict] & (~resolve_choice)
-                    mask_rgb[conflict] = mask_rgb[conflict] & resolve_choice
-                
-                # Apply dropout
-                if mask_rgb.any():
-                    imgs[mask_rgb, 0:3, :, :] = 0.0
-                if mask_ir.any():
-                    imgs[mask_ir, 3:6, :, :] = 0.0
-                    
+                rand = torch.rand(B, device=imgs.device)
+
+                # [0, p_rgb) 丢 RGB
+                # [p_rgb, p_rgb + p_ir) 丢 IR
+                # [p_rgb + p_ir, 1.0) 双模态保留
+                mask_drop_rgb = rand < p_rgb
+                mask_drop_ir = (rand >= p_rgb) & (rand < p_rgb + p_ir)
+
+                if mask_drop_rgb.any():
+                    imgs[mask_drop_rgb, 0:3, :, :] = 0.0
+                if mask_drop_ir.any():
+                    imgs[mask_drop_ir, 3:6, :, :] = 0.0
+
                 batch["img"] = imgs
 
         if self.args.multi_scale:

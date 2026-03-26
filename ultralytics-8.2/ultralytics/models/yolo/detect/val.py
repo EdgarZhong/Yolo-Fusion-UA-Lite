@@ -52,44 +52,6 @@ class DetectionValidator(BaseValidator):
         batch["img"] = batch["img"].to(self.device, non_blocking=True)
         batch["img"] = (batch["img"].half() if self.args.half else batch["img"].float()) / 255
         
-        # Modality Dropout (RGB+IR) for Validation/Testing
-        # Allows evaluating model robustness by dropping modalities
-        if hasattr(self.args, 'drop_prob_rgb') and hasattr(self.args, 'drop_prob_ir'):
-            if self.args.drop_prob_rgb > 0 or self.args.drop_prob_ir > 0:
-                imgs = batch["img"]
-                # Only apply to 6-channel input (3 RGB + 3 IR)
-                if imgs.shape[1] == 6:
-                    B = imgs.shape[0]
-                    # Generate random masks
-                    rand_rgb = torch.rand(B, device=imgs.device)
-                    rand_ir = torch.rand(B, device=imgs.device)
-                    
-                    mask_rgb = rand_rgb < self.args.drop_prob_rgb
-                    mask_ir = rand_ir < self.args.drop_prob_ir
-                    
-                    # Mutex check: prevent dropping both modalities (all black)
-                    conflict = mask_rgb & mask_ir
-                    if conflict.any():
-                        # For conflicting samples, randomly choose one to KEEP
-                        resolve_choice = torch.rand(conflict.sum(), device=imgs.device) > 0.5
-                        
-                        # Extract indices
-                        conflict_indices = torch.nonzero(conflict).squeeze()
-                        if conflict_indices.dim() == 0:
-                            conflict_indices = conflict_indices.unsqueeze(0)
-                            
-                        # Resolve
-                        # choice=True -> keep IR (unset mask_ir)
-                        # choice=False -> keep RGB (unset mask_rgb)
-                        mask_ir[conflict_indices[resolve_choice]] = False
-                        mask_rgb[conflict_indices[~resolve_choice]] = False
-
-                    # Apply dropout
-                    if mask_rgb.any():
-                        imgs[mask_rgb, 0:3, :, :] = 0.0
-                    if mask_ir.any():
-                        imgs[mask_ir, 3:6, :, :] = 0.0
-
         for k in ["batch_idx", "cls", "bboxes"]:
             batch[k] = batch[k].to(self.device)
 

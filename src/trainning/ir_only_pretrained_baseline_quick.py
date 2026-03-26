@@ -172,7 +172,7 @@ def main():
         # 验证参数
         "conf": 0.25,
         "iou": 0.75,
-        "max_det": 300,
+        "max_det": 500,
         # 数据增强（简化）
         "mosaic": 1.0,
         "close_mosaic": 0,
@@ -188,8 +188,12 @@ def main():
         "hsv_h": 0.0,
         "hsv_s": 0.0,
         "hsv_v": 0.0,
+        "erasing": 0.0,
         # 验证配置（使用测试集作为验证集）
         "use_test_as_val": True,
+        "drop_prob_rgb": 0.10,
+        "drop_prob_ir": 0.10,
+        "close_dropout": 16,
         # 输出配置
         "project": str(PROJECT_DIR),
         "name": NAME,
