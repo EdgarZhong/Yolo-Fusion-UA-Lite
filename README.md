@@ -381,6 +381,14 @@ Neck 输出（经 FPN+PANet 后）：Neck-P3 → 层34，Final-P4 → 层37，Fi
 
 **框架源码已修改：** `ultralytics-8.2/ultralytics/` 中的标签映射和数据集加载逻辑已经过修改以适配双模态 6 通道输入约定。若未来升级框架版本，需将这些修改迁移。
 
+### 框架变更记录（2026-03-24）
+
+- 新增 `WaveletC2f` 与内部子模块 `HaarWavelet2D`，用于 IR 骨干的可替换 `C2f` 频域增强实现（固定 Haar 分支 + 可学习 1×1 投影）。
+- 新增 `CrossModalAlign`，用于融合前的 RGB→IR 特征空间对齐（`torchvision.ops.deform_conv2d`）。
+- 新模块已完成 `ultralytics.nn.modules` 导出与 `parse_model` 解析注册，可直接被 YAML 模块名解析。
+- `parse_model` 已支持 `CrossModalAlign` 后接融合模块时的 `from: -1` 链式写法，允许对齐层输出 list 直接传递给融合层。
+- 本次仅实现模块与测试，不改动任何训练/实验 YAML；待注意力选型完成后再切换基线配置。
+
 **已废弃方案（勿重复踩坑）：**
 - 直接依赖 `site-packages` 中的高版本 `ultralytics 8.3.x`——版本差异导致行为不一致
 - 训练阶段对库进行猴子补丁——已改为直接修改 editable install 源码

@@ -1,7 +1,42 @@
 import torch
 import torch.nn as nn
+import torchvision.ops
 
+from .block import C2f
 from .conv import Conv
+
+
+class HaarWavelet2D(nn.Module):
+    def __init__(self, c1: int):
+        super().__init__()
+        filters = torch.tensor(
+            [
+                [0.5, 0.5, 0.5, 0.5],
+                [0.5, 0.5, -0.5, -0.5],
+                [0.5, -0.5, 0.5, -0.5],
+                [0.5, -0.5, -0.5, 0.5],
+            ],
+            dtype=torch.float32,
+        ).reshape(4, 1, 2, 2)
+        self.register_buffer("filters", filters.repeat(c1, 1, 1, 1))
+        self.groups = c1
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return nn.functional.conv2d(x, self.filters, stride=2, groups=self.groups)
+
+
+class WaveletC2f(nn.Module):
+    def __init__(self, c1: int, c2: int, n: int = 1, shortcut: bool = False, g: int = 1, e: float = 0.5):
+        super().__init__()
+        self.c2f = C2f(c1, c2, n=n, shortcut=shortcut, g=g, e=e)
+        self.wavelet = HaarWavelet2D(c1)
+        self.proj = Conv(c2 + 4 * c1, c2, k=1, s=1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        y_c2f = self.c2f(x)
+        y_w = self.wavelet(x)
+        y_w = nn.functional.interpolate(y_w, size=y_c2f.shape[-2:], mode="nearest")
+        return self.proj(torch.cat([y_c2f, y_w], dim=1))
 
 
 class Inception(nn.Module):
@@ -268,3 +303,29 @@ class CrossModalFusionAttention(nn.Module):
         fi = self.inc_ir(x_ir)
         fr_w, fi_w = self.cm_se(fr, fi)
         return torch.cat([fr_w, fi_w], dim=1).contiguous()
+
+
+class CrossModalAlign(nn.Module):
+    def __init__(self, c1: int, kernel_size: int = 3):
+        super().__init__()
+        padding = kernel_size // 2
+        self.deform_padding = padding
+        self.offset_conv1 = nn.Conv2d(2 * c1, c1, kernel_size=3, stride=1, padding=1)
+        self.offset_bn = nn.BatchNorm2d(c1)
+        self.offset_act = nn.SiLU(inplace=False)
+        self.offset_conv2 = nn.Conv2d(c1, 2 * kernel_size * kernel_size, kernel_size=3, stride=1, padding=1)
+        self.deform_weight = nn.Parameter(torch.empty(c1, c1, kernel_size, kernel_size))
+        nn.init.zeros_(self.offset_conv2.weight)
+        nn.init.zeros_(self.offset_conv2.bias)
+        nn.init.dirac_(self.deform_weight)
+
+    def forward(self, x: list[torch.Tensor] | tuple[torch.Tensor, torch.Tensor]) -> list[torch.Tensor]:
+        x_rgb, x_ir = x
+        offset = self.offset_conv2(self.offset_act(self.offset_bn(self.offset_conv1(torch.cat([x_rgb, x_ir], dim=1)))))
+        x_rgb_aligned = torchvision.ops.deform_conv2d(
+            input=x_rgb,
+            offset=offset,
+            weight=self.deform_weight,
+            padding=self.deform_padding,
+        )
+        return [x_rgb_aligned, x_ir]

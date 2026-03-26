@@ -227,7 +227,13 @@ def run_extract(
             elif _spec.capture == "weights":
                 captured[_spec.name] = _capture_weights_from_se(m, inp[0]).detach()
             else:
-                wr, wi = _capture_pair_weights_from_fa(m, inp[0], inp[1])
+                if len(inp) >= 2:
+                    x_rgb, x_ir = inp[0], inp[1]
+                elif len(inp) == 1 and isinstance(inp[0], (list, tuple)) and len(inp[0]) >= 2:
+                    x_rgb, x_ir = inp[0][0], inp[0][1]
+                else:
+                    raise RuntimeError(f"weights_pair hook 输入不符合预期: type={type(inp)}, len={len(inp)}")
+                wr, wi = _capture_pair_weights_from_fa(m, x_rgb, x_ir)
                 captured["attn_weights_rgb"] = wr.detach()
                 captured["attn_weights_ir"] = wi.detach()
 

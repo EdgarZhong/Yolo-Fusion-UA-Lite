@@ -40,6 +40,8 @@ from ultralytics.nn.modules import (
     InceptionCoordAttnConcat,
     InceptionSimAMConcat,
     CrossModalFusionAttention,
+    CrossModalAlign,
+    WaveletC2f,
     Classify,
     Concat,
     Conv,
@@ -1065,6 +1067,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             PSA,
             SCDown,
             C2fCIB,
+            WaveletC2f,
         }:
             c1, c2 = ch[f], args[0]
             if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
@@ -1101,36 +1104,62 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                 args = [c2]
         elif m is FeatureAttentionConcat:
             # FA‑Concat：两路输入通道必须一致；输出通道为两路之和；构造参数传入单路通道数
-            assert isinstance(f, (list, tuple)) and len(f) == 2
-            assert ch[f[0]] == ch[f[1]], "FeatureAttentionConcat 两路输入通道必须一致"
-            c2 = ch[f[0]] + ch[f[1]]
+            if isinstance(f, (list, tuple)):
+                assert len(f) == 2
+                assert ch[f[0]] == ch[f[1]], "FeatureAttentionConcat 两路输入通道必须一致"
+                c_single = ch[f[0]]
+            else:
+                c_single = ch[f]
+            c2 = 2 * c_single
             if not args:
-                args = [ch[f[0]]]
+                args = [c_single]
         elif m is InceptionConcat:
-            assert isinstance(f, (list, tuple)) and len(f) == 2
-            assert ch[f[0]] == ch[f[1]], "InceptionConcat 两路输入通道必须一致"
-            c2 = ch[f[0]] + ch[f[1]]
+            if isinstance(f, (list, tuple)):
+                assert len(f) == 2
+                assert ch[f[0]] == ch[f[1]], "InceptionConcat 两路输入通道必须一致"
+                c_single = ch[f[0]]
+            else:
+                c_single = ch[f]
+            c2 = 2 * c_single
             if not args:
-                args = [ch[f[0]]]
+                args = [c_single]
         elif m is InceptionCoordAttnConcat:
-            assert isinstance(f, (list, tuple)) and len(f) == 2
-            assert ch[f[0]] == ch[f[1]], "InceptionCoordAttnConcat 两路输入通道必须一致"
-            c2 = ch[f[0]] + ch[f[1]]
+            if isinstance(f, (list, tuple)):
+                assert len(f) == 2
+                assert ch[f[0]] == ch[f[1]], "InceptionCoordAttnConcat 两路输入通道必须一致"
+                c_single = ch[f[0]]
+            else:
+                c_single = ch[f]
+            c2 = 2 * c_single
             if not args:
-                args = [ch[f[0]]]
+                args = [c_single]
         elif m is InceptionSimAMConcat:
-            assert isinstance(f, (list, tuple)) and len(f) == 2
-            assert ch[f[0]] == ch[f[1]], "InceptionSimAMConcat 两路输入通道必须一致"
-            c2 = ch[f[0]] + ch[f[1]]
+            if isinstance(f, (list, tuple)):
+                assert len(f) == 2
+                assert ch[f[0]] == ch[f[1]], "InceptionSimAMConcat 两路输入通道必须一致"
+                c_single = ch[f[0]]
+            else:
+                c_single = ch[f]
+            c2 = 2 * c_single
             if not args:
-                args = [ch[f[0]]]
+                args = [c_single]
         elif m is CrossModalFusionAttention:
             # CM‑FA‑Concat：两路输入通道必须一致；输出通道为两路之和；构造参数传入单路通道数
-            assert isinstance(f, (list, tuple)) and len(f) == 2
-            assert ch[f[0]] == ch[f[1]], "CrossModalFusionAttention 两路输入通道必须一致"
-            c2 = ch[f[0]] + ch[f[1]]
+            if isinstance(f, (list, tuple)):
+                assert len(f) == 2
+                assert ch[f[0]] == ch[f[1]], "CrossModalFusionAttention 两路输入通道必须一致"
+                c_single = ch[f[0]]
+            else:
+                c_single = ch[f]
+            c2 = 2 * c_single
             if not args:
-                args = [ch[f[0]]]
+                args = [c_single]
+        elif m is CrossModalAlign:
+            assert isinstance(f, (list, tuple)) and len(f) == 2
+            assert ch[f[0]] == ch[f[1]], "CrossModalAlign 两路输入通道必须一致"
+            c2 = ch[f[0]]
+            if not args:
+                args = [c2]
         elif m in {Detect, WorldDetect, Segment, Pose, OBB, ImagePoolingAttn, v10Detect}:
             args.append([ch[x] for x in f])
             if m is Segment:

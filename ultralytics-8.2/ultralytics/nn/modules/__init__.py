@@ -85,12 +85,14 @@ from .transformer import (
     TransformerLayer,
 )
 from .fusion import (
+    CrossModalAlign,
     FusionAttention,
     FeatureAttentionConcat,
     InceptionConcat,
     InceptionCoordAttnConcat,
     InceptionSimAMConcat,
     CrossModalFusionAttention,
+    WaveletC2f,
 )
 
 __all__ = (
@@ -168,4 +170,6 @@ __all__ = (
     "InceptionCoordAttnConcat",
     "InceptionSimAMConcat",
     "CrossModalFusionAttention",
+    "WaveletC2f",
+    "CrossModalAlign",
 )
