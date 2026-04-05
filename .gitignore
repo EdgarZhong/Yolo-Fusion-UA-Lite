@@ -51,3 +51,5 @@ models/IR-YOLOv8n/**
 !models/formal/CM-FA-Concat-FPN-PAN-neck/
 !models/formal/CM-FA-Concat-FPN-PAN-neck/**
 .archive/
+*.npz
+

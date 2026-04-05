@@ -12,6 +12,12 @@ hooks:
   pre_attn_ir:
     module_path: "model.23.inc_ir"
     capture: "output"
+  post_attn_rgb:
+    module_path: "model.23.sa_rgb"
+    capture: "output"
+  post_attn_ir:
+    module_path: "model.23.sa_ir"
+    capture: "output"
   fused_p3:
     layer_idx: 24
     capture: "output"

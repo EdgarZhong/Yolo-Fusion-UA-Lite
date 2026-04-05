@@ -32,6 +32,8 @@ ALLOWED_SEMANTIC_KEYS = {
     "ir_p3",
     "pre_attn_rgb",
     "pre_attn_ir",
+    "post_attn_rgb",
+    "post_attn_ir",
     "fused_p3",
     "attn_weights",
 }
