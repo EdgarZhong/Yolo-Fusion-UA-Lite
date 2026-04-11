@@ -199,15 +199,7 @@ CLAUDE.md 只跟踪**工程上下文**：当前处于什么阶段、具体到第
 
 ## 项目当前进展
 
-**当前阶段：** 冻结错误修复后的前置对照重建阶段（先完成三组前置对照，再进入 Exp-B/C）
-
-### 已完成
-
-- [x] IR-only 从零训练（M0）
-- [x] IR-only COCO 预训练基准（历史结果已标记受 freeze 错误影响，待重跑更新）
-- [x] FA-Concat + Neck（M3）
-- [x] FA-Concat + COCO 微调（M5，当前最优）
-- [x] 正则化实验（M6）
+**当前阶段：** 论文补充分析 + RGB-only 基线补齐阶段（A/B 已完成，C 训练补跑中）
 
 ### 本轮工程状态（新会话接续必读）
 
@@ -215,18 +207,39 @@ CLAUDE.md 只跟踪**工程上下文**：当前处于什么阶段、具体到第
 - [x] 断点续训已修复：当起始 epoch 超过冻结窗口时，自动 `skip backbone freezing`（仅保留 `.dfl` 常驻冻结）。
 - [x] 框架参数防呆已加固：`freeze` 负值、非法索引、越界索引均直接报错；训练前打印 `Freeze plan`。
 - [x] 固定回归单入口已上线：`src/trainning/regression_gate.py`（静态/动态门禁，失败即非零退出）。
-- [x] Exp-0 训练脚本已就绪并通过门禁：`src/trainning/attention_exp0_train.py`。
-- [x] Exp-A 训练脚本已就绪并通过门禁：`src/trainning/attention_expa_train.py`。
-- [x] Exp-0 / Exp-A 输出目录统一为 `models/attention_exp/<RUN_NAME>/`。
+- [x] Exp-0 / Exp-A 训练脚本已就绪并通过门禁，输出目录统一为 `models/attention_exp/<RUN_NAME>/`。
 - [x] IR 预训练脚本已切换为 `yolov8n.pt` 主干迁移范式（`pretrained=False` + 显式迁移 + 硬校验）：
   - `src/trainning/ir_only_pretrained_baseline.py`
   - `src/trainning/ir_only_pretrained_baseline_quick.py`
+- [x] 论文补充任务 A 已完成：特征紧凑度分析脚本、5 个模型 JSON、汇总报告均已生成。
+- [x] 论文补充任务 B 已完成：光照分层诊断脚本、5 个模型 JSON、汇总报告均已生成。
+- [x] RGB-only 数据集已新增显式单模态口径：`src/cfg/datasets/rgb_obb_dronevehicle.yaml` 中设置 `force_single_modal: true`。
+- [x] 框架数据构建已支持 `force_single_modal: true`，可避免 `trainimg/valimg/testimg` 被误判为双模态 6 通道。
 
-### 进行中 / 待办
+### 已完成
 
-- [ ] 第一组前置对照：IR-only COCO 重跑 vs M5（进行中）
-- [ ] 第二组前置对照：Exp-0 vs Exp-A（待启动，IR-only COCO 重跑完成后）
-- [ ] 第三组前置对照：CM-FA 重跑 vs M5（待启动，Exp-A 完成后）
-- [ ] 结论审计检查点（待启动，三组前置对照完成后）
-- [ ] 第二阶段注意力选型：Exp-B（待启动，结论审计通过后）
-- [ ] 第二阶段注意力选型：Exp-C（待启动，结论审计通过后）
+- [x] IR-only 从零训练（M0）
+- [x] IR-only COCO 预训练基准重跑（`IR-Only-Pretrained-New`，freeze 错误修复后完成）
+- [x] FA-Concat + Neck（M3）
+- [x] FA-Concat + COCO 微调（M5，当前最优）
+- [x] 正则化实验（M6）
+- [x] 任务 A 交付：`src/diagnostic/outputs/reports/compactness_analysis_report.md`
+- [x] 任务 B 交付：`src/diagnostic/outputs/reports/stratified_analysis_report.md`
+
+### 进行中
+
+- [ ] 前置对照归档整理：统一 `models/_tracked/` 与 `result/_tracked/` 追踪口径，清理旧训练产物追踪噪声
+
+### 本阶段结论与交付
+
+- [x] RGB-only COCO 预训练基线已完成：`models/baseline/RGB-Only-Pretrained/`
+- [x] 任务 A 报告已生成：`src/diagnostic/outputs/reports/compactness_analysis_report.md`
+- [x] 任务 B 报告已生成：`src/diagnostic/outputs/reports/stratified_analysis_report.md`
+- [x] 已进入下一阶段准备：开始整理对照实验资产与版本库追踪策略
+
+### 待办
+
+- [ ] 第一组前置对照：Exp-0 vs Exp-A
+- [ ] 结论审计检查点（前置对照完成后）
+- [ ] 第二阶段注意力选型：Exp-B（结论审计通过后）
+- [ ] 第二阶段注意力选型：Exp-C（结论审计通过后）

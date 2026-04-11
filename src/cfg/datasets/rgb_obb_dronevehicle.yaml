@@ -1,0 +1,8 @@
+path: D:/Code/DeepLearning/YOLO-Fusion-UA-Lite
+train: data_croped/train/trainimg
+val: data_croped/val/valimg
+test: data_croped/test/testimg
+force_single_modal: true
+nc: 5
+names: ["car", "truck", "bus", "van", "freight_car"]
+task: obb

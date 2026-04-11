@@ -654,6 +654,81 @@ class YOLOIRDataset(YOLODataset):
             return [None, None, None, None, None, nm, nf, ne, nc, msg]
 
 
+class YOLORGBDataset(YOLOIRDataset):
+    def get_img_files(self, img_path):
+        from ultralytics.data.utils import IMG_FORMATS, FORMATS_HELP_MSG
+        try:
+            files = []
+            paths = img_path if isinstance(img_path, list) else [img_path]
+            for p in paths:
+                p = Path(p)
+                if p.is_dir():
+                    leaf = p.name.lower()
+                    if leaf in {"trainimg", "valimg", "testimg"}:
+                        rgb_list = sorted(x for x in p.rglob("*.*") if x.suffix[1:].lower() in IMG_FORMATS)
+                        files.extend(str(x) for x in rgb_list)
+                    else:
+                        files.extend(sorted(str(x) for x in p.rglob("*.*") if x.suffix[1:].lower() in IMG_FORMATS))
+                elif p.is_file():
+                    with open(p) as t:
+                        lines = [x.strip() for x in t.read().strip().splitlines() if len(x.strip())]
+                        parent = str(p.parent) + os.sep
+                        for x in lines:
+                            x = x.replace("./", parent) if x.startswith("./") else x
+                            files.append(x)
+                else:
+                    raise FileNotFoundError(f"{self.prefix}{p} 不存在")
+
+            im_files = []
+            for x in files:
+                if x.split(".")[-1].lower() in IMG_FORMATS:
+                    im_files.append(x.replace("/", os.sep))
+            assert im_files, f"{self.prefix}未在 {img_path} 中找到图像。{FORMATS_HELP_MSG}"
+        except Exception as e:
+            raise FileNotFoundError(f"{self.prefix}加载数据失败：{img_path}\n{FORMATS_HELP_MSG}") from e
+
+        if self.fraction < 1:
+            im_files = im_files[: round(len(im_files) * self.fraction)]
+        return im_files
+
+    def get_labels(self):
+        from ultralytics.data.utils import HELP_URL, get_hash, load_dataset_cache_file, save_dataset_cache_file
+        labels = []
+
+        def map_label_path(rgb):
+            rp = Path(rgb)
+            leaf = rp.parent.name.lower()
+            if leaf in {"trainimg", "valimg", "testimg"}:
+                subset = leaf.replace("img", "")
+                base = rp.parent.parent
+                lb_dir = base / f"{subset}labels_yolo_obb"
+                return (lb_dir / (rp.stem + ".txt")).as_posix()
+            from ultralytics.data.utils import img2label_paths
+            return img2label_paths([rgb])[0]
+
+        self.label_files = [map_label_path(f) for f in self.im_files]
+        cache_path = Path(self.label_files[0]).parent.with_suffix(".cache")
+        try:
+            cache, exists = load_dataset_cache_file(cache_path), True
+            assert cache["version"] == DATASET_CACHE_VERSION
+            assert cache["hash"] == get_hash(self.label_files + self.im_files)
+        except (FileNotFoundError, AssertionError, AttributeError):
+            cache, exists = self.cache_labels(cache_path), False
+
+        nf, nm, ne, nc, n = cache.pop("results")
+        if exists and LOCAL_RANK in {-1, 0}:
+            d = f"扫描 {cache_path}... {nf} images, {nm + ne} backgrounds, {nc} corrupt"
+            TQDM(None, desc=self.prefix + d, total=n, initial=n)
+            if cache["msgs"]:
+                LOGGER.info("\n".join(cache["msgs"]))
+
+        [cache.pop(k) for k in ("hash", "version", "msgs")]
+        labels = cache["labels"]
+        if not labels:
+            LOGGER.warning(f"WARNING ⚠️ 缓存 {cache_path} 中未发现图像，训练可能异常。{HELP_URL}")
+        return labels
+
+
 class GroundingDataset(YOLODataset):
     """Handles object detection tasks by loading annotations from a specified JSON file, supporting YOLO format."""
 

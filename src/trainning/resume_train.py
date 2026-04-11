@@ -137,6 +137,12 @@ def main():
         default=str(default_resume_path()),
         help="断点路径：可传运行目录或具体 last.pt 文件；默认为上次正式训练目录",
     )
+    parser.add_argument(
+        "--batch",
+        type=int,
+        default=None,
+        help="可选：续训时仅覆盖 batch 大小",
+    )
     args = parser.parse_args()
 
     # 解析实际 last.pt 文件并推断输入通道数
@@ -147,6 +153,8 @@ def main():
     overrides = {
         "resume": str(ckpt_pt),
     }
+    if args.batch is not None:
+        overrides["batch"] = int(args.batch)
 
     # 运行信息提示
     print("[Resume][OBB] 断点续训启动：")
@@ -158,6 +166,8 @@ def main():
             f"imgsz={prev_args.get('imgsz')}, batch={prev_args.get('batch')}, optimizer={prev_args.get('optimizer')}, "
             f"lr0={prev_args.get('lr0')}, lrf={prev_args.get('lrf')}, mosaic={prev_args.get('mosaic')}, save_period={prev_args.get('save_period')}"
         )
+    if args.batch is not None:
+        print(f"[Resume] 覆盖 batch={args.batch}")
 
     # 根据检查点架构自适配训练器：3通道→IR 单模态；6通道→双主干默认实现
     trainer = IR_OBB_Trainer(overrides=overrides) if in_ch == 3 else OBBTrainer(overrides=overrides)

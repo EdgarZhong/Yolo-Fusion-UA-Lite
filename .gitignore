@@ -17,39 +17,19 @@ data/**
 !data/数据集预处理逻辑.md
 data_croped/**
 !data_croped/.gitkeep
-# 忽略训练产物，仅保留目录本身（models/baseline, models/formal）
-# 说明：Git 不会跟踪空目录，因此使用 .gitkeep 作为占位文件保留目录结构
-models/baseline/**
-!models/baseline/
-!models/baseline/.gitkeep
-models/fusion-attention/**
-!models/fusion-attention/
-!models/fusion-attention/.gitkeep
-models/formal/**
-!models/formal/
-!models/formal/.gitkeep
-models/IR-YOLOv8n/**
-# 追踪 IR 单模态从零训练输出目录（from_scrach/train）内的所有内容，便于对照实验比对
-!models/IR-YOLOv8n/
-!models/IR-YOLOv8n/from_scrach/
-!models/IR-YOLOv8n/from_scrach/train/
-!models/IR-YOLOv8n/from_scrach/train/**
-# 保留 formal/dualbackbone-easy-obb-formal6 模型权重存放目录及其所有内容
-!models/formal/dualbackbone-easy-obb-formal6/
-!models/formal/dualbackbone-easy-obb-formal6/**
-# 保留 formal/fusion-attention/dualbackbone-fusionattention-obb 模型权重存放目模型训练129轮，效果不佳
-!models/formal/fusion-attention/
-!models/formal/fusion-attention/dualbackbone-fusionattention-obb/
-!models/formal/fusion-attention/dualbackbone-fusionattention-obb/**
-# 保留 formal/dualbackbone-FA-Concat-obb 模型权重存放目录及其所有内容（该模型正在训练中）
-!models/formal/dualbackbone-FA-Concat-obb/
-!models/formal/dualbackbone-FA-Concat-obb/**
-# 保留 formal/FA-Concat-FPN-PAN-neck 模型权重存放目录及其所有内容（该模型正在训练中）
-!models/formal/FA-Concat-FPN-PAN-neck/
-!models/formal/FA-Concat-FPN-PAN-neck/**
-# 保留 formal/CM-FA-Concat-FPN-PAN-neck 模型权重存放目录及其所有内容（该模型正在训练中）
-!models/formal/CM-FA-Concat-FPN-PAN-neck/
-!models/formal/CM-FA-Concat-FPN-PAN-neck/**
+models/**
+!models/.gitignore
+!models/_tracked/
+!models/_tracked/**
+result/**
+!result/.gitignore
+!result/_tracked/
+!result/_tracked/**
+src/diagnostic/outputs/features/*.extract_config.json
+src/diagnostic/outputs/figures/**
+src/diagnostic/outputs/reports/**
+!src/diagnostic/outputs/reports/compactness_analysis_report.md
+!src/diagnostic/outputs/reports/stratified_analysis_report.md
 .archive/
 *.npz
 

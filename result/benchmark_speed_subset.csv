@@ -1,8 +1,0 @@
-model_code,model_label,weights,preprocess_ms_per_img,inference_ms_per_img,postprocess_ms_per_img,avg_total_ms_per_img,fps
-M0,IR-YOLOv8n,D:/Code/DeepLearning/YOLO-Fusion-UA-Lite/models/IR-YOLOv8n/from_scrach/train/weights/best.pt,0.5852,2.1032,3.3192,6.0076,166.45462
-M1,Dual-Easy-Concat,D:/Code/DeepLearning/YOLO-Fusion-UA-Lite/models/formal/dualbackbone-easy-obb-formal6/weights/best.pt,1.2485,3.3902,3.1894,7.8281,127.74533
-M2,Dual-FA-Concat(without neck),D:/Code/DeepLearning/YOLO-Fusion-UA-Lite/models/formal/dualbackbone-FA-Concat-obb/weights/best.pt,1.2418,3.5532,3.4144,8.2094,121.81166
-M3,FA-Concat (Scratch),D:/Code/DeepLearning/YOLO-Fusion-UA-Lite/models/formal/FA-Concat-FPN-PAN-neck/weights/best.pt,1.2316,3.8945,3.3560,8.4821,117.89529
-M4,CM-FA (Scratch),D:/Code/DeepLearning/YOLO-Fusion-UA-Lite/models/formal/CM-FA-Concat-FPN-PAN-neck/weights/best.pt,1.2073,3.9335,3.3037,8.4446,118.41942
-M5,FA-Concat (Tuned),D:/Code/DeepLearning/YOLO-Fusion-UA-Lite/models/posttrain/FA-Concat_FPN-PAN_tuned/weights/best.pt,1.2666,3.9224,3.5300,8.7190,114.69225
-M6,FA-Concat (Reg),D:/Code/DeepLearning/YOLO-Fusion-UA-Lite/models/posttrain/Final_Recall_640_Regularized/weights/best.pt,1.2552,3.9363,3.9384,9.1299,109.52974

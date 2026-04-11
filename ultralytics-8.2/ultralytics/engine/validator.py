@@ -154,13 +154,14 @@ class BaseValidator:
 
             model.eval()
             val_path = self.data.get(self.args.split, "")
+            force_single_modal = bool(self.data.get("force_single_modal", False)) if isinstance(self.data, dict) else False
             def _is_dual_dir(p):
                 try:
                     name = str(Path(p).name).lower()
                 except Exception:
                     name = str(p).split(os.sep)[-1].lower()
                 return name in {"trainimg", "valimg", "testimg"}
-            c = 6 if _is_dual_dir(val_path) else 3
+            c = 3 if force_single_modal else (6 if _is_dual_dir(val_path) else 3)
             model.warmup(imgsz=(1 if pt else self.args.batch, c, imgsz, imgsz))
 
         self.run_callbacks("on_val_start")

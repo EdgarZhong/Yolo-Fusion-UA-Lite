@@ -63,6 +63,7 @@ conda activate .\.conda\ultra82-py312
 | SiLU `inplace=False` | SE/CrossModalSE 已实现；新增含 SiLU 的模块同样适用 |
 | YAML 融合接口：输入 `list[Tensor,Tensor]`，输出 `[B,2C,H,W]` | 解析器要求 |
 | `max_det=500` | 数据集最高 246 实例，留余量 |
+| RGB-only 数据集切换 | 对单模态 RGB YAML 显式设置 `force_single_modal: true`，框架将跳过 `trainimg/valimg/testimg` 的双模态目录启发式，按 3 通道普通 YOLODataset 加载 |
 
 **关于训练超参：** 训练超参随实验阶段推进而变化，不在此处维护。当前阶段统一超参见 `docs/research/研究备忘录_v7.md` 第 5.2 节。
 

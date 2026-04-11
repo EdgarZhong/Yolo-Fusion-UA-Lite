@@ -52,6 +52,8 @@ def build_resume_command() -> list[str]:
         str(root / "src" / "trainning" / "resume_train.py"),
         "--resume",
         str(run_dir),
+        "--batch",
+        "12",
     ]
 
 
@@ -130,7 +132,7 @@ def main():
         "data": str(data_cfg),
         "pretrained": False,
         "epochs": TOTAL_EPOCHS,
-        "batch": 16,
+        "batch": 12,
         "imgsz": 640,
         "device": 0,
         "workers": 2,

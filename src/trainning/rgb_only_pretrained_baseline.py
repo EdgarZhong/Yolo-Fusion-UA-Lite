@@ -12,15 +12,14 @@ if str(ULTRA) not in sys.path:
 
 from ultralytics.models.yolo.obb import OBBTrainer
 from ultralytics.nn.tasks import OBBModel, attempt_load_one_weight
-from ultralytics.utils import RANK, yaml_load, yaml_save
+from ultralytics.utils import RANK
 
-RUN_NAME = "RGB-Only-Pretrained-New"
+RUN_NAME = "RGB-Only-Pretrained"
 TOTAL_EPOCHS = 160
 CLOSE_MOSAIC_EPOCHS = 16
 FREEZE_EPOCHS = 10
 PRETRAINED_WEIGHTS = ROOT / "yolov8n.pt"
-DUAL_DATA_YAML = ROOT / "src" / "cfg" / "datasets" / "dual_obb_dronevehicle.yaml"
-IMG_EXTS = {".bmp", ".dng", ".jpeg", ".jpg", ".mpo", ".png", ".tif", ".tiff", ".webp", ".pfm"}
+RGB_DATA_YAML = ROOT / "src" / "cfg" / "datasets" / "rgb_obb_dronevehicle.yaml"
 SINGLE_TO_RGB_BACKBONE_MAP = {
     0: 0,
     1: 1,
@@ -45,58 +44,12 @@ def get_run_dir() -> Path:
     return project_dir / RUN_NAME
 
 
-def _collect_images(image_dir: Path) -> list[Path]:
-    return sorted(p for p in image_dir.rglob("*.*") if p.suffix.lower() in IMG_EXTS)
-
-
-def _write_manifest(image_dir: Path, manifest_path: Path) -> int:
-    if not image_dir.exists():
-        raise FileNotFoundError(f"RGB 图像目录不存在: {image_dir}")
-    files = _collect_images(image_dir)
-    if not files:
-        raise RuntimeError(f"RGB 图像目录为空: {image_dir}")
-    manifest_path.parent.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text("\n".join(p.as_posix() for p in files), encoding="utf-8")
-    return len(files)
-
-
 def build_rgb_dataset_yaml() -> Path:
-    if not DUAL_DATA_YAML.exists():
-        raise FileNotFoundError(f"未找到双模态数据配置: {DUAL_DATA_YAML}")
-
-    data_cfg = yaml_load(DUAL_DATA_YAML)
-    runtime_dir = get_run_dir() / "_runtime_data"
-    runtime_dir.mkdir(parents=True, exist_ok=True)
-
-    train_dir = (ROOT / data_cfg["train"]).resolve()
-    val_dir = (ROOT / data_cfg["val"]).resolve()
-    test_dir = (ROOT / data_cfg["test"]).resolve()
-
-    train_list = runtime_dir / "train_rgb.txt"
-    val_list = runtime_dir / "val_rgb.txt"
-    test_list = runtime_dir / "test_rgb.txt"
-
-    train_count = _write_manifest(train_dir, train_list)
-    val_count = _write_manifest(val_dir, val_list)
-    test_count = _write_manifest(test_dir, test_list)
-
-    runtime_yaml = runtime_dir / "rgb_obb_dronevehicle_runtime.yaml"
-    runtime_cfg = {
-        "path": str(ROOT),
-        "train": train_list.as_posix(),
-        "val": val_list.as_posix(),
-        "test": test_list.as_posix(),
-        "nc": data_cfg["nc"],
-        "names": data_cfg["names"],
-        "task": "obb",
-    }
-    yaml_save(runtime_yaml, runtime_cfg)
-
+    if not RGB_DATA_YAML.exists():
+        raise FileNotFoundError(f"未找到 RGB 单模态数据配置: {RGB_DATA_YAML}")
     if RANK in (-1, 0):
-        print(f"[Data][RGB-OBB] train={train_count}, val={val_count}, test={test_count}")
-        print(f"[Data][RGB-OBB] runtime_yaml={runtime_yaml}")
-
-    return runtime_yaml
+        print(f"[Data][RGB-OBB] yaml={RGB_DATA_YAML}")
+    return RGB_DATA_YAML
 
 
 def transfer_single_backbone_to_rgb_obb(source_weights: Path, target_model) -> dict:
@@ -164,7 +117,7 @@ def build_resume_command() -> list[str]:
 def get_train_manager_spec() -> dict:
     run_dir = get_run_dir()
     return {
-        "name": "rgb_only_pretrained_baseline",
+        "name": "RGB-Only-Pretrained",
         "train_cmd": build_train_command(),
         "resume_cmd": build_resume_command(),
         "resume_ready": str(run_dir / "weights" / "last.pt"),
@@ -196,7 +149,7 @@ def main():
         "rect": False,
         "conf": 0.25,
         "iou": 0.75,
-        "max_det": 300,
+        "max_det": 500,
         "mosaic": 1.0,
         "close_mosaic": CLOSE_MOSAIC_EPOCHS,
         "mixup": 0.0,
@@ -211,7 +164,9 @@ def main():
         "hsv_h": 0.0,
         "hsv_s": 0.0,
         "hsv_v": 0.0,
+        "erasing": 0.0,
         "optimizer": "SGD",
+        "close_dropout": CLOSE_MOSAIC_EPOCHS,
         "lr0": 0.01,
         "lrf": 0.01,
         "momentum": 0.937,

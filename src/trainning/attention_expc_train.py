@@ -52,6 +52,8 @@ def build_resume_command() -> list[str]:
         str(root / "src" / "trainning" / "resume_train.py"),
         "--resume",
         str(run_dir),
+        "--batch",
+        "12",
     ]
 
 

@@ -17,15 +17,17 @@
   - predictions.json（若启用 `save_json=True`）
 """
 
-from pathlib import Path
 import argparse
-import os
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+ULTRA = ROOT / "ultralytics-8.2"
+if str(ULTRA) not in sys.path:
+    sys.path.insert(0, str(ULTRA))
 
 from ultralytics.models.yolo.obb import OBBValidator
 from ultralytics.utils.metrics import ConfusionMatrix
-
-
-ROOT = Path(__file__).resolve().parents[2]
 
 # 路径宏（推荐按需修改）
 DATA_CFG = ROOT / "src" / "cfg" / "datasets" / "dual_obb_dronevehicle.yaml"
@@ -56,13 +58,14 @@ def _pick_weights(user_path: str | None) -> Path:
 def run_eval_and_confmat(
     weights: Path,
     device: str = "0",
+    data_cfg: Path = DATA_CFG,
     result_dir: Path | None = None,
     run_name: str = DEFAULT_RUN_NAME,
     imgsz: int = 640,
     batch: int = 16,
     conf: float = 0.25,
     iou: float = 0.75,
-    max_det: int = 1000,
+    max_det: int = 500,
     test_aug: bool = False,
 ):
     """
@@ -78,7 +81,7 @@ def run_eval_and_confmat(
     args = dict(
         task="obb",
         model=str(weights),
-        data=str(DATA_CFG),
+        data=str(data_cfg),
         split="test",
         imgsz=imgsz,
         rect=True,
@@ -119,14 +122,16 @@ def main():
     parser.add_argument("--batch", type=int, default=16, help="测试批大小")
     parser.add_argument("--conf", type=float, default=0.25, help="置信度阈值（默认 0.25）")
     parser.add_argument("--iou", type=float, default=0.75, help="NMS的IOU阈值")
-    parser.add_argument("--max-det", type=int, default=1000, help="每图最大检测数量")
+    parser.add_argument("--max-det", type=int, default=500, help="每图最大检测数量")
     parser.add_argument("--test-aug", action="store_true", help="启用测试时增强（多尺度/翻转）")
+    parser.add_argument("--data-cfg", type=str, default=str(DATA_CFG), help="数据集 YAML 路径")
     args = parser.parse_args()
 
     w = _pick_weights(args.weights or None)
     out_dir, stats = run_eval_and_confmat(
         weights=w,
         device=args.device,
+        data_cfg=Path(args.data_cfg),
         result_dir=Path(args.result_dir),
         run_name=args.run_name,
         imgsz=args.imgsz,
