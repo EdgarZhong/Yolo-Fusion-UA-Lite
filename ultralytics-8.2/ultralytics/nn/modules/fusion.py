@@ -237,6 +237,66 @@ class InceptionSimAMConcat(nn.Module):
         return torch.cat([fr, fi], dim=1).contiguous()
 
 
+class SingleModalInceptionSE(nn.Module):
+    """单模态版本的 Inception + SE 注意力模块。
+
+    设计动机：
+    - 双模态 `FeatureAttentionConcat` 的每一路本质上都是 `Inception -> SE`；
+    - 为了和注意力对比实验保持公平，这里把其中一路“半模块”抽出来，直接作用在单模态 P3 特征上；
+    - 输出通道数与输入保持一致，便于无缝插入标准 YOLOv8 OBB 单主干结构。
+    """
+
+    def __init__(self, c1: int):
+        """构造单模态 SE 模块。
+
+        参数：
+        - c1：输入通道数，同时也是输出通道数。
+        """
+        super().__init__()
+        self.inc = Inception(c1)
+        self.se = SEBlock(c1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """前向：先做多分支特征提取，再做通道重标定。"""
+        return self.se(self.inc(x)).contiguous()
+
+
+class SingleModalInceptionCoordAtt(nn.Module):
+    """单模态版本的 Inception + CoordAtt 注意力模块。
+
+    该模块对应双模态 `InceptionCoordAttnConcat` 的单路拆分版本，
+    保留空间感知注意力，同时避免引入额外的跨模态耦合。
+    """
+
+    def __init__(self, c1: int):
+        """构造单模态 CoordAtt 模块。"""
+        super().__init__()
+        self.inc = Inception(c1)
+        self.ca = CoordAtt(c1, c1)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """前向：先做 Inception 提取，再做坐标注意力增强。"""
+        return self.ca(self.inc(x)).contiguous()
+
+
+class SingleModalInceptionSimAM(nn.Module):
+    """单模态版本的 Inception + SimAM 注意力模块。
+
+    该模块对应双模态 `InceptionSimAMConcat` 的单路拆分版本，
+    用于在不改变单主干框架主体的前提下，把融合层注意力公平移植到单模态基准中。
+    """
+
+    def __init__(self, c1: int):
+        """构造单模态 SimAM 模块。"""
+        super().__init__()
+        self.inc = Inception(c1)
+        self.sa = SimAM()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """前向：先做 Inception 提取，再做零参数 SimAM 增强。"""
+        return self.sa(self.inc(x)).contiguous()
+
+
 class CrossModalSE(nn.Module):
     """跨模态 SE 注意力模块：联合感知 RGB 与 IR 的全局信息后分别生成两路权重
 

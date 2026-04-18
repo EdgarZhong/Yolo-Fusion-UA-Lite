@@ -32,4 +32,4 @@ src/diagnostic/outputs/reports/**
 !src/diagnostic/outputs/reports/stratified_analysis_report.md
 .archive/
 *.npz
-
+*.7z

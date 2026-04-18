@@ -61,6 +61,7 @@ conda activate .\.conda\ultra82-py312
 | Inception 输入 `c1 % 4 == 0` | 仅约束直接输入 Inception 的张量 |
 | Inception 输出 `.contiguous()` | 已实现 |
 | SiLU `inplace=False` | SE/CrossModalSE 已实现；新增含 SiLU 的模块同样适用 |
+| 单模态注意力公平对照 | 已支持把双模态 P3 融合模块的单路半模块移植到单模态 P3 侧路，当前可选 `SE / CoordAtt / SimAM` |
 | YAML 融合接口：输入 `list[Tensor,Tensor]`，输出 `[B,2C,H,W]` | 解析器要求 |
 | `max_det=500` | 数据集最高 246 实例，留余量 |
 | RGB-only 数据集切换 | 对单模态 RGB YAML 显式设置 `force_single_modal: true`，框架将跳过 `trainimg/valimg/testimg` 的双模态目录启发式，按 3 通道普通 YOLODataset 加载 |
@@ -129,7 +130,10 @@ YOLO-Fusion-UA-Lite/
 │   │       ├── dualbackbone_FA-Concat.yaml
 │   │       ├── dualbackbone_CM-FA-Concat.yaml
 │   │       ├── dualbackbone_easy_obb.yaml
-│   │       └── dualbackbone_fusionattention_obb.yaml
+│   │       ├── dualbackbone_fusionattention_obb.yaml
+│   │       ├── single_modal_p3_inception_se.yaml        # 单模态公平对照：P3 Inception+SE
+│   │       ├── single_modal_p3_inception_coordatt.yaml  # 单模态公平对照：P3 Inception+CoordAtt
+│   │       └── single_modal_p3_inception_simam.yaml     # 单模态公平对照：P3 Inception+SimAM
 │   ├── dataset_preprocess/
 │   │   ├── preprocess_obb.py       # 标签预处理：四角点→OBB 6列格式，双阶段几何匹配
 │   │   ├── crop_white_borders.py   # 白边裁切（已完成，输出 data_croped/）
@@ -194,6 +198,8 @@ python src/trainning/train_manager.py --script src/trainning/<训练脚本>.py
 |------|------|
 | `ir_only_pretrained_baseline.py` | IR 单模态 COCO 预训练基准（全量，160 epoch） |
 | `ir_only_pretrained_baseline_quick.py` | IR 单模态快速冒烟验证（fraction=0.05） |
+| `ir_only_simam_pretrained_baseline.py` | IR 单模态 SimAM 公平对照（全量，160 epoch） |
+| `rgb_only_simam_pretrained_baseline.py` | RGB 单模态 SimAM 公平对照（全量，160 epoch） |
 | `cm_fa_transfer_train.py` | CM-FA 从 yolov8n.pt 迁移重训（全量，220 epoch） |
 | `attention_expb_train.py` | Exp-B：P3 InceptionCoordAttnConcat（全量，160 epoch） |
 | `attention_expc_train.py` | Exp-C：P3 InceptionSimAMConcat（全量，160 epoch） |

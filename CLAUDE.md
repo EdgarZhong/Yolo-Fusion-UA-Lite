@@ -215,6 +215,16 @@ CLAUDE.md 只跟踪**工程上下文**：当前处于什么阶段、具体到第
 - [x] 论文补充任务 B 已完成：光照分层诊断脚本、5 个模型 JSON、汇总报告均已生成。
 - [x] RGB-only 数据集已新增显式单模态口径：`src/cfg/datasets/rgb_obb_dronevehicle.yaml` 中设置 `force_single_modal: true`。
 - [x] 框架数据构建已支持 `force_single_modal: true`，可避免 `trainimg/valimg/testimg` 被误判为双模态 6 通道。
+- [x] 单模态公平对照已接入框架：新增 `SingleModalInceptionSE / SingleModalInceptionCoordAtt / SingleModalInceptionSimAM`，用于把双模态 P3 融合注意力的单路半模块移植到单模态基准。
+- [x] 单模态 P3 注意力配置已新增：
+  - `src/cfg/model/single_modal_p3_inception_se.yaml`
+  - `src/cfg/model/single_modal_p3_inception_coordatt.yaml`
+  - `src/cfg/model/single_modal_p3_inception_simam.yaml`
+- [x] SimAM 单模态训练脚本已新增：
+  - `src/trainning/ir_only_simam_pretrained_baseline.py`
+  - `src/trainning/rgb_only_simam_pretrained_baseline.py`
+- [x] `ir_only_simam_pretrained_baseline.py` 已通过静态门禁、单轮验证跑和动态门禁，可正式开训。
+- [x] `rgb_only_simam_pretrained_baseline.py` 已通过静态门禁。
 
 ### 已完成
 
@@ -229,6 +239,7 @@ CLAUDE.md 只跟踪**工程上下文**：当前处于什么阶段、具体到第
 ### 进行中
 
 - [ ] 前置对照归档整理：统一 `models/_tracked/` 与 `result/_tracked/` 追踪口径，清理旧训练产物追踪噪声
+- [ ] IR / RGB 单模态公平对照：补跑 SE、CoordAtt、SimAM 全量训练与评测
 
 ### 本阶段结论与交付
 
@@ -243,3 +254,5 @@ CLAUDE.md 只跟踪**工程上下文**：当前处于什么阶段、具体到第
 - [ ] 结论审计检查点（前置对照完成后）
 - [ ] 第二阶段注意力选型：Exp-B（结论审计通过后）
 - [ ] 第二阶段注意力选型：Exp-C（结论审计通过后）
+- [ ] 启动 `IR-Only-SimAM` 正式训练并完成全量评测
+- [ ] 启动 `RGB-Only-SimAM` 正式训练并完成全量评测

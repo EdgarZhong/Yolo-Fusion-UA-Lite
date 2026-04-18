@@ -39,6 +39,9 @@ from ultralytics.nn.modules import (
     InceptionConcat,
     InceptionCoordAttnConcat,
     InceptionSimAMConcat,
+    SingleModalInceptionSE,
+    SingleModalInceptionCoordAtt,
+    SingleModalInceptionSimAM,
     CrossModalFusionAttention,
     CrossModalAlign,
     WaveletC2f,
@@ -1143,6 +1146,11 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             c2 = 2 * c_single
             if not args:
                 args = [c_single]
+        elif m in {SingleModalInceptionSE, SingleModalInceptionCoordAtt, SingleModalInceptionSimAM}:
+            # 单模态注意力模块保持输入/输出通道一致，仅在构造时注入当前层通道数。
+            c2 = ch[f]
+            if not args:
+                args = [c2]
         elif m is CrossModalFusionAttention:
             # CM‑FA‑Concat：两路输入通道必须一致；输出通道为两路之和；构造参数传入单路通道数
             if isinstance(f, (list, tuple)):
